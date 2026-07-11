@@ -1,0 +1,1 @@
+{"name":"Gestor de Gastos Inteligente","description":"Gestión inteligente de gastos diarios con OCR de recibos por IA, presupuestos mensuales con alertas, sincronización en la nube y sandbox de cuentas bancarias.","requestFramePermissions":["camera"],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}

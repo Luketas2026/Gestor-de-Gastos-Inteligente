@@ -1,0 +1,210 @@
+{
+  "expenses": [
+    {
+      "id": "exp-1",
+      "amount": 45500.0,
+      "category": "Alimentación",
+      "description": "Compra semanal Coto",
+      "date": "2026-07-10",
+      "paymentMethod": "Tarjeta de Crédito",
+      "isAutoClassified": true,
+      "bankAccountId": "bank-1"
+    },
+    {
+      "id": "exp-2",
+      "amount": 12800.0,
+      "category": "Transporte",
+      "description": "Carga de SUBE y taxi",
+      "date": "2026-07-09",
+      "paymentMethod": "Tarjeta de Crédito",
+      "isAutoClassified": false,
+      "bankAccountId": "bank-1"
+    },
+    {
+      "id": "exp-3",
+      "amount": 75000.0,
+      "category": "Servicios",
+      "description": "Factura de luz Edesur",
+      "date": "2026-07-05",
+      "paymentMethod": "Transferencia",
+      "isAutoClassified": true,
+      "bankAccountId": "bank-1"
+    },
+    {
+      "id": "exp-4",
+      "amount": 15990.0,
+      "category": "Entretenimiento",
+      "description": "Suscripción Netflix Premium",
+      "date": "2026-07-01",
+      "paymentMethod": "Tarjeta de Crédito",
+      "isAutoClassified": true,
+      "bankAccountId": "bank-1"
+    },
+    {
+      "id": "exp-5",
+      "amount": 32400.0,
+      "category": "Salud",
+      "description": "Medicamentos Farmacity",
+      "date": "2026-07-08",
+      "paymentMethod": "Efectivo",
+      "isAutoClassified": false
+    }
+  ],
+  "budgets": [
+    {
+      "id": "b-1",
+      "category": "Alimentación",
+      "limit": 300000,
+      "spent": 45500.0,
+      "month": "2026-07",
+      "alerts": [
+        {
+          "threshold": 0.5,
+          "triggered": false
+        },
+        {
+          "threshold": 0.8,
+          "triggered": false
+        },
+        {
+          "threshold": 1,
+          "triggered": false
+        }
+      ]
+    },
+    {
+      "id": "b-2",
+      "category": "Transporte",
+      "limit": 100000,
+      "spent": 12800.0,
+      "month": "2026-07",
+      "alerts": [
+        {
+          "threshold": 0.5,
+          "triggered": false
+        },
+        {
+          "threshold": 0.8,
+          "triggered": false
+        },
+        {
+          "threshold": 1,
+          "triggered": false
+        }
+      ]
+    },
+    {
+      "id": "b-3",
+      "category": "Servicios",
+      "limit": 150000,
+      "spent": 75000.0,
+      "month": "2026-07",
+      "alerts": [
+        {
+          "threshold": 0.5,
+          "triggered": true,
+          "triggeredAt": "2026-07-05T18:00:00Z"
+        },
+        {
+          "threshold": 0.8,
+          "triggered": false
+        },
+        {
+          "threshold": 1,
+          "triggered": false
+        }
+      ]
+    },
+    {
+      "id": "b-4",
+      "category": "Entretenimiento",
+      "limit": 80000,
+      "spent": 15990.0,
+      "month": "2026-07",
+      "alerts": [
+        {
+          "threshold": 0.5,
+          "triggered": false
+        },
+        {
+          "threshold": 0.8,
+          "triggered": false
+        },
+        {
+          "threshold": 1,
+          "triggered": false
+        }
+      ]
+    },
+    {
+      "id": "b-5",
+      "category": "Salud",
+      "limit": 100000,
+      "spent": 32400.0,
+      "month": "2026-07",
+      "alerts": [
+        {
+          "threshold": 0.5,
+          "triggered": false
+        },
+        {
+          "threshold": 0.8,
+          "triggered": false
+        },
+        {
+          "threshold": 1,
+          "triggered": false
+        }
+      ]
+    },
+    {
+      "id": "b-6",
+      "category": "Otros",
+      "limit": 100000,
+      "spent": 0,
+      "month": "2026-07",
+      "alerts": [
+        {
+          "threshold": 0.5,
+          "triggered": false
+        },
+        {
+          "threshold": 0.8,
+          "triggered": false
+        },
+        {
+          "threshold": 1,
+          "triggered": false
+        }
+      ]
+    }
+  ],
+  "bankConnections": [
+    {
+      "id": "bank-1",
+      "bankName": "BBVA Argentina",
+      "accountType": "Caja de Ahorros",
+      "balance": 2450750.0,
+      "lastSynced": "2026-07-11 09:30",
+      "accountNumber": "AR34 0017 **** 4321",
+      "status": "connected"
+    },
+    {
+      "id": "bank-2",
+      "bankName": "Banco Galicia",
+      "accountType": "Cuenta Corriente",
+      "balance": 12800400.0,
+      "lastSynced": "2026-07-11 08:15",
+      "accountNumber": "AR91 0007 **** 8765",
+      "status": "connected"
+    }
+  ],
+  "notifications": [],
+  "securitySettings": {
+    "biometricsEnabled": true,
+    "encryptionEnabled": false,
+    "twoFactorEnabled": false,
+    "twoFactorSecret": "GEXP7X3J9S92FLL5",
+    "encryptionKey": ""
+  }
+}
