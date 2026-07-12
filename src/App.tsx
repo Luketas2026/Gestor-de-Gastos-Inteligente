@@ -30,13 +30,12 @@ import {
   Fingerprint,
   QrCode,
   X,
-  CreditCard,
   FileSpreadsheet,
   ShieldAlert,
   LogOut
 } from "lucide-react";
-import { AppState, Expense, Budget, BankConnection, Notification, SecuritySettings } from "./types";
-import { validateCBU, maskCBU, isValidAliasFormat } from "./utils/cbu";
+import { AppState, Expense, Budget, Notification, SecuritySettings } from "./types";
+import { BANCOS_ARGENTINOS } from "./utils/bancos";
 
 export default function App() {
   // Theme State
@@ -68,7 +67,6 @@ export default function App() {
   const [appData, setAppData] = useState<AppState>({
     expenses: [],
     budgets: [],
-    bankConnections: [],
     notifications: [],
     securitySettings: {
       biometricsEnabled: true,
@@ -106,20 +104,10 @@ export default function App() {
     description: "",
     date: new Date().toISOString().substring(0, 10),
     paymentMethod: "Tarjeta de Crédito",
-    bankAccountId: ""
+    bank: ""
   });
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterCategory, setFilterCategory] = useState<string>("Todos");
-
-  // Bank Simulator States
-  const [syncingBankId, setSyncingBankId] = useState<string | null>(null);
-  const [showLinkBankModal, setShowLinkBankModal] = useState<boolean>(false);
-  const [newBankForm, setNewBankForm] = useState({
-    cbu: "",
-    alias: "",
-    accountType: "Cuenta Corriente",
-    balance: "1500"
-  });
 
   // Security Simulator States
   const [showBiometricScreen, setShowBiometricScreen] = useState<boolean>(true);
@@ -228,7 +216,6 @@ export default function App() {
     setAppData({
       expenses: [],
       budgets: [],
-      bankConnections: [],
       notifications: [],
       securitySettings: {
         biometricsEnabled: true,
@@ -284,7 +271,7 @@ export default function App() {
           description: expenseForm.description,
           date: expenseForm.date,
           paymentMethod: expenseForm.paymentMethod,
-          bankAccountId: expenseForm.bankAccountId || undefined,
+          bank: expenseForm.bank || undefined,
           items: scanResult?.items || undefined
         })
       });
@@ -298,7 +285,7 @@ export default function App() {
           "success"
         );
         
-        // Refresh full state to reflect bank deductions, budgets, and notifications
+        // Refresh full state to reflect budgets and notifications
         await fetchData();
 
         // Trigger dynamic modal alert if budget threshold exceeded
@@ -315,7 +302,7 @@ export default function App() {
           description: "",
           date: new Date().toISOString().substring(0, 10),
           paymentMethod: "Tarjeta de Crédito",
-          bankAccountId: ""
+          bank: ""
         });
         setScanResult(null);
         setSelectedImage(null);
@@ -332,7 +319,7 @@ export default function App() {
     try {
       const res = await authFetch(`/api/expenses/${id}`, { method: "DELETE" });
       if (res.ok) {
-        showToast("Gasto eliminado. Saldo reembolsado si correspondía", "info");
+        showToast("Gasto eliminado", "info");
         await fetchData();
       } else {
         showToast("Error al eliminar gasto", "error");
@@ -382,7 +369,7 @@ export default function App() {
           description: result.data.vendor,
           date: result.data.date,
           paymentMethod: "Tarjeta de Crédito",
-          bankAccountId: appData.bankConnections[0]?.id || ""
+          bank: ""
         });
         showToast(`OCR finalizado por ${result.method === "gemini_ai_ocr" ? "Gemini AI" : "Simulador OCR"}. Datos pre-completados.`, "success");
       } else {
@@ -392,87 +379,6 @@ export default function App() {
       showToast("Fallo al conectar con el motor OCR", "error");
     } finally {
       setScanning(false);
-    }
-  };
-
-  // Simulate Bank real-time Sync pulling
-  const handleSyncBank = async (bankId: string) => {
-    try {
-      setSyncingBankId(bankId);
-      showToast("Conectando con la API del banco de forma segura...", "info");
-      const res = await authFetch(`/api/banks/sync/${bankId}`, { method: "POST" });
-      
-      if (res.ok) {
-        // Wait 2 seconds for server timeout simulator to finish
-        setTimeout(async () => {
-          await fetchData();
-          setSyncingBankId(null);
-          showToast("Sincronización bancaria en tiempo real finalizada", "success");
-        }, 2000);
-      } else {
-        setSyncingBankId(null);
-        showToast("Error al sincronizar con la API bancaria", "error");
-      }
-    } catch (err) {
-      setSyncingBankId(null);
-      showToast("Fallo de red bancaria", "error");
-    }
-  };
-
-  // Link New Bank Account via real API (validates real CBU/CVU checksum)
-  const handleLinkBank = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const cbuCheck = validateCBU(newBankForm.cbu);
-    if (!cbuCheck.valid) {
-      showToast(cbuCheck.error || "CBU/CVU inválido", "error");
-      return;
-    }
-
-    if (newBankForm.alias && !isValidAliasFormat(newBankForm.alias)) {
-      showToast("El alias debe tener entre 6 y 20 caracteres (minúsculas, números y puntos).", "error");
-      return;
-    }
-
-    try {
-      const res = await authFetch("/api/banks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cbu: newBankForm.cbu.replace(/\s|-/g, ""),
-          alias: newBankForm.alias.trim().toLowerCase() || undefined,
-          accountType: newBankForm.accountType,
-          balance: parseFloat(newBankForm.balance) || 0
-        })
-      });
-
-      if (res.ok) {
-        const result = await res.json();
-        await fetchData();
-        setShowLinkBankModal(false);
-        setNewBankForm({ cbu: "", alias: "", accountType: "Cuenta Corriente", balance: "1500" });
-        showToast(`¡Cuenta de ${result.bank?.bankName || cbuCheck.bankName} vinculada con éxito!`, "success");
-      } else {
-        const result = await res.json().catch(() => null);
-        showToast(result?.error || "Error al vincular banco", "error");
-      }
-    } catch (err) {
-      showToast("Error de conexión al vincular banco", "error");
-    }
-  };
-
-  // Unlink Bank Account via real API
-  const handleUnlinkBank = async (id: string) => {
-    try {
-      const res = await authFetch(`/api/banks/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        showToast("Cuenta bancaria desvinculada correctamente", "info");
-        await fetchData();
-      } else {
-        showToast("Error al desvincular cuenta bancaria", "error");
-      }
-    } catch (err) {
-      showToast("Fallo de red al desvincular cuenta", "error");
     }
   };
 
@@ -657,7 +563,6 @@ export default function App() {
   };
 
   // Local helper calculations
-  const totalBalance = appData.bankConnections.reduce((sum, b) => sum + b.balance, 0);
   const totalMonthlySpent = appData.expenses.reduce((sum, e) => sum + e.amount, 0);
   const totalMonthlyBudget = appData.budgets.reduce((sum, b) => sum + b.limit, 0);
 
@@ -928,16 +833,6 @@ export default function App() {
             Presupuestos
           </button>
           <button
-            onClick={() => setActiveTab("banks")}
-            className={`px-4 py-2.5 rounded-xl font-medium text-xs transition cursor-pointer ${
-              activeTab === "banks"
-                ? "bg-white dark:bg-slate-800 shadow text-emerald-500 dark:text-emerald-400 font-bold"
-                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            Cuentas Bancarias
-          </button>
-          <button
             onClick={() => setActiveTab("security")}
             className={`px-4 py-2.5 rounded-xl font-medium text-xs transition cursor-pointer ${
               activeTab === "security"
@@ -976,16 +871,7 @@ export default function App() {
                 {/* Left Stats Column */}
                 <div className="lg:col-span-2 space-y-6">
                   {/* Financial Bento Stats cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-6 rounded-3xl bg-emerald-500 text-slate-950 shadow-lg relative overflow-hidden">
-                      <div className="absolute right-0 bottom-0 opacity-10 translate-x-4 translate-y-4">
-                        <Wallet className="h-40 w-40" />
-                      </div>
-                      <span className="text-2xs uppercase tracking-widest font-bold opacity-70">Saldo Consolidado</span>
-                      <h2 className="text-3xl font-extrabold mt-1">${totalBalance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</h2>
-                      <p className="text-xs opacity-80 mt-4 font-mono">Sincronizado con {appData.bankConnections.length} cuentas bancarias</p>
-                    </div>
-
+                  <div className="grid grid-cols-1 gap-4">
                     <div className="p-6 rounded-3xl dark:bg-slate-900 bg-white border border-slate-200 dark:border-slate-800 shadow-md">
                       <div className="flex justify-between items-start">
                         <div>
@@ -1088,30 +974,8 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Right Column: Recent Expenses & Active Banks */}
+                {/* Right Column: Recent Expenses */}
                 <div className="space-y-6">
-                  {/* Bank list inside dashboard */}
-                  <div className="p-6 rounded-3xl dark:bg-slate-900 bg-white border border-slate-200 dark:border-slate-800 shadow-md">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-sm font-bold">Cuentas Bancarias</h3>
-                      <button onClick={() => setActiveTab("banks")} className="text-xs text-emerald-400 hover:underline">Ver todas</button>
-                    </div>
-                    <div className="space-y-3">
-                      {appData.bankConnections.map(b => (
-                        <div key={b.id} className="p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/20">
-                          <div>
-                            <span className="text-xs font-bold block">{b.bankName}</span>
-                            <span className="text-3xs text-slate-400 font-mono">{b.alias || maskCBU(b.accountNumber)}</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">${b.balance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
-                            <span className="text-[9px] text-emerald-400 block font-mono">Sincronizado</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
                   {/* Quick recent expenses mini-list */}
                   <div className="p-6 rounded-3xl dark:bg-slate-900 bg-white border border-slate-200 dark:border-slate-800 shadow-md">
                     <div className="flex justify-between items-center mb-4">
@@ -1325,20 +1189,21 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div>
-                        <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Cargar a Cuenta Vinculada (Opcional)</label>
-                        <select
-                          value={expenseForm.bankAccountId}
-                          onChange={e => setExpenseForm({ ...expenseForm, bankAccountId: e.target.value })}
-                          className="w-full px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500 text-slate-800 dark:text-slate-100"
-                        >
-                          <option value="" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Ninguna (Gasto Externo)</option>
-                          {appData.bankConnections.map(b => (
-                            <option key={b.id} value={b.id} className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">{b.bankName} - Saldo: ${b.balance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</option>
-                          ))}
-                        </select>
-                        <span className="text-[10px] text-slate-400 mt-1 block">Si seleccionas una cuenta, el importe se deducirá automáticamente de tu saldo bancario en tiempo real.</span>
-                      </div>
+                      {expenseForm.paymentMethod !== "Efectivo" && (
+                        <div>
+                          <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Banco (Opcional)</label>
+                          <select
+                            value={expenseForm.bank}
+                            onChange={e => setExpenseForm({ ...expenseForm, bank: e.target.value })}
+                            className="w-full px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500 text-slate-800 dark:text-slate-100"
+                          >
+                            <option value="" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Sin especificar</option>
+                            {BANCOS_ARGENTINOS.map(nombre => (
+                              <option key={nombre} value={nombre} className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">{nombre}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       <button
                         type="submit"
@@ -1434,10 +1299,10 @@ export default function App() {
                                   <span>{expense.date}</span>
                                   <span>•</span>
                                   <span>{expense.paymentMethod}</span>
-                                  {expense.bankAccountId && (
+                                  {expense.bank && (
                                     <>
                                       <span>•</span>
-                                      <span className="text-emerald-400 font-mono">Bancario</span>
+                                      <span className="text-emerald-400 font-mono">{expense.bank}</span>
                                     </>
                                   )}
                                 </div>
@@ -1583,137 +1448,6 @@ export default function App() {
                       <input type="checkbox" defaultChecked className="accent-emerald-500" />
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* ======================================================== */}
-            {/* D. BANK CONNECTIONS PORTAL                              */}
-            {/* ======================================================== */}
-            {activeTab === "banks" && (
-              <div className="space-y-6">
-                <div className="p-6 rounded-3xl dark:bg-slate-900 bg-white border border-slate-200 dark:border-slate-800 shadow-md">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b dark:border-slate-800 border-slate-100 mb-6 gap-4">
-                    <div>
-                      <h3 className="text-sm font-bold">Integración de Cuentas Bancarias</h3>
-                      <p className="text-xs text-slate-400">Vincula tus bancos para recibir transacciones en tiempo real de forma segura (Cifrado E2EE).</p>
-                    </div>
-                    <button
-                      onClick={() => setShowLinkBankModal(true)}
-                      className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer shadow-md"
-                    >
-                      Vincular Nueva Cuenta
-                    </button>
-                  </div>
-
-                  {/* Bank list cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {appData.bankConnections.map(b => {
-                      let cardBgClass = "bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-950 text-white border border-slate-700";
-                      let brandLogo = null;
-                      
-                      const nameLower = b.bankName.toLowerCase();
-                      if (nameLower.includes("bbva")) {
-                        cardBgClass = "bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-950 text-white border border-blue-600/30 shadow-lg shadow-blue-950/10";
-                      } else if (nameLower.includes("santander")) {
-                        cardBgClass = "bg-gradient-to-br from-red-600 via-red-700 to-rose-950 text-white border border-red-500/30 shadow-lg shadow-red-950/10";
-                      } else if (nameLower.includes("caixa")) {
-                        cardBgClass = "bg-gradient-to-br from-cyan-600 via-teal-800 to-slate-950 text-white border border-teal-500/30 shadow-lg shadow-teal-950/10";
-                      } else if (nameLower.includes("revolut")) {
-                        cardBgClass = "bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-950 text-white border border-slate-700/50 shadow-lg shadow-zinc-950/20";
-                      } else if (nameLower.includes("n26")) {
-                        cardBgClass = "bg-gradient-to-br from-teal-800 via-slate-900 to-slate-950 text-white border border-teal-500/30 shadow-lg shadow-teal-950/10";
-                      } else {
-                        cardBgClass = "bg-gradient-to-br from-emerald-700 via-emerald-800 to-teal-950 text-white border border-emerald-600/30 shadow-lg shadow-emerald-950/10";
-                      }
-
-                      return (
-                        <div
-                          key={b.id}
-                          className={`p-6 rounded-3xl ${cardBgClass} flex flex-col justify-between h-[230px] relative overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl`}
-                        >
-                          {/* Decorative card glow elements */}
-                          <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
-                          <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-black/25 rounded-full blur-2xl pointer-events-none"></div>
-
-                          {/* Top: Brand & Status */}
-                          <div className="flex justify-between items-center z-10">
-                            <div>
-                              <span className="text-2xs uppercase tracking-widest font-black text-white/50 block">BANCO CONECTADO</span>
-                              <h4 className="text-xs font-black tracking-wide text-white uppercase">{b.bankName}</h4>
-                            </div>
-                            
-                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-mono font-bold tracking-wider flex items-center ${
-                              b.status === "connected" 
-                                ? "bg-white/10 text-emerald-300 backdrop-blur-md" 
-                                : "bg-amber-500/20 text-amber-300 backdrop-blur-md animate-pulse"
-                            }`}>
-                              <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${b.status === "connected" ? "bg-emerald-400" : "bg-amber-400"}`}></span>
-                              {b.status === "connected" ? "CONECTADO" : "SINCRONIZANDO"}
-                            </span>
-                          </div>
-
-                          {/* Middle: Chip, Signal and Masked Card Number */}
-                          <div className="my-3 flex items-center justify-between z-10">
-                            <div className="flex items-center space-x-3">
-                              {/* Golden Chip */}
-                              <div className="w-8.5 h-6.5 rounded bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-500 p-1 flex flex-col justify-between shadow-inner relative overflow-hidden">
-                                <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-25 gap-[1px]">
-                                  {[...Array(9)].map((_, i) => <div key={i} className="border border-slate-950"></div>)}
-                                </div>
-                                <div className="w-full h-full border border-amber-600/30 rounded opacity-60"></div>
-                              </div>
-                              
-                              {/* Contactless icon */}
-                              <svg className="h-4 w-4 text-white/40 transform rotate-90" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" d="M12 18a6 6 0 000-12M15 15a3 3 0 000-6M18 12a1 1 0 000-2" />
-                              </svg>
-                            </div>
-                            
-                            <span className="text-xs font-mono tracking-widest text-white/90 font-bold">{b.alias || maskCBU(b.accountNumber)}</span>
-                          </div>
-
-                          {/* Bottom: Balance and Actions */}
-                          <div className="flex justify-between items-end z-10 mt-auto">
-                            <div>
-                              <span className="text-[9px] uppercase tracking-widest text-white/50 block font-bold">{b.accountType}</span>
-                              <span className="text-2xl font-black tracking-tight font-mono">${b.balance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
-                            </div>
-                            
-                            {/* Sync / Trash Action buttons inside the card */}
-                            <div className="flex space-x-1 bg-white/10 p-1 rounded-xl backdrop-blur-md">
-                              <button
-                                onClick={() => handleSyncBank(b.id)}
-                                disabled={syncingBankId === b.id}
-                                title="Sincronizar movimientos"
-                                className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                              >
-                                <RefreshCw className={`h-3.5 w-3.5 ${syncingBankId === b.id ? "animate-spin" : ""}`} />
-                              </button>
-                              <button
-                                onClick={() => handleUnlinkBank(b.id)}
-                                title="Desvincular cuenta bancaria"
-                                className="p-2 text-white/60 hover:text-rose-400 hover:bg-rose-500/20 rounded-lg transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Simulated notifications rule on suspicious movements */}
-                <div className="p-6 rounded-3xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200">
-                  <h4 className="text-xs font-bold text-amber-700 dark:text-amber-400 mb-2 flex items-center space-x-2">
-                    <ShieldCheck className="h-4 w-4" />
-                    <span>Detección de Movimientos Sospechosos</span>
-                  </h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Nuestro sistema utiliza la API bancaria segura para evaluar tus cargos diarios. En caso de transacciones inusualmente altas (&gt;$500.000) o ubicaciones/comercios extraños, el motor generará una alerta push interactiva e ingresará un informe de advertencia en tiempo real para evitar fraudes.
-                  </p>
                 </div>
               </div>
             )}
@@ -2059,107 +1793,6 @@ export default function App() {
           </div>
         )}
       </div>
-
-      {/* ======================================================== */}
-      {/* G. LINK BANK MODAL DIALOG SIMULATOR                     */}
-      {/* ======================================================== */}
-      {showLinkBankModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-xs">
-          <div className="w-full max-w-md p-6 bg-slate-850 dark:bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl text-slate-100">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-bold text-white flex items-center space-x-1.5">
-                <CreditCard className="h-5 w-5 text-emerald-400" />
-                <span>Vincular Cuenta con API Bancaria</span>
-              </h3>
-              <button onClick={() => setShowLinkBankModal(false)} className="p-1.5 text-slate-400 hover:text-white">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleLinkBank} className="space-y-4">
-              <div>
-                <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">CBU / CVU (22 dígitos)</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="0000000000000000000000"
-                  value={newBankForm.cbu}
-                  onChange={e => setNewBankForm({ ...newBankForm, cbu: e.target.value.replace(/[^\d]/g, "").slice(0, 22) })}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none font-mono tracking-wider"
-                />
-                {newBankForm.cbu.length > 0 && (() => {
-                  const check = validateCBU(newBankForm.cbu);
-                  return check.valid ? (
-                    <p className="mt-1.5 text-2xs text-emerald-400 flex items-center space-x-1">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span>Banco detectado: {check.bankName}</span>
-                    </p>
-                  ) : newBankForm.cbu.length === 22 ? (
-                    <p className="mt-1.5 text-2xs text-rose-400">{check.error}</p>
-                  ) : (
-                    <p className="mt-1.5 text-2xs text-slate-500">{newBankForm.cbu.length}/22 dígitos</p>
-                  );
-                })()}
-              </div>
-
-              <div>
-                <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Alias (opcional)</label>
-                <input
-                  type="text"
-                  placeholder="mi.alias.cuenta"
-                  value={newBankForm.alias}
-                  onChange={e => setNewBankForm({ ...newBankForm, alias: e.target.value.toLowerCase().slice(0, 20) })}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none font-mono"
-                />
-                {newBankForm.alias.length > 0 && !isValidAliasFormat(newBankForm.alias) && (
-                  <p className="mt-1.5 text-2xs text-rose-400">6-20 caracteres: minúsculas, números y puntos.</p>
-                )}
-                <p className="mt-1.5 text-2xs text-slate-500">
-                  Es solo un apodo para identificar la cuenta más fácil — no lo validamos contra tu banco.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Tipo de Cuenta</label>
-                <select
-                  value={newBankForm.accountType}
-                  onChange={e => setNewBankForm({ ...newBankForm, accountType: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none"
-                >
-                  <option value="Cuenta Corriente">Cuenta Corriente</option>
-                  <option value="Cuenta de Ahorros">Cuenta de Ahorros</option>
-                  <option value="Tarjeta de Crédito">Tarjeta de Crédito</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Saldo de apertura ($)</label>
-                <input
-                  type="number"
-                  value={newBankForm.balance}
-                  onChange={e => setNewBankForm({ ...newBankForm, balance: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none font-bold"
-                />
-              </div>
-
-              <div className="p-3 bg-emerald-500/5 border border-emerald-500/15 rounded-xl text-[10px] text-slate-400 flex items-start space-x-2">
-                <ShieldCheck className="h-4.5 w-4.5 text-emerald-400 mt-0.5 shrink-0" />
-                <span>
-                  Validamos tu CBU/CVU con el algoritmo oficial del BCRA (dígito verificador módulo 10) y detectamos el banco automáticamente por su código de entidad.
-                </span>
-              </div>
-
-              <button
-                type="submit"
-                disabled={!validateCBU(newBankForm.cbu).valid || (newBankForm.alias.length > 0 && !isValidAliasFormat(newBankForm.alias))}
-                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Vincular y Cifrar Cuenta
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ======================================================== */}
       {/* H. EMAIL REPORT PREVIEW MODAL SCREEN                     */}

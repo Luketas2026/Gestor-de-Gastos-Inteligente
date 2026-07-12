@@ -4,16 +4,14 @@ import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import crypto from "crypto";
-import { Expense, Budget, BankConnection, Notification, SecuritySettings, AppState } from "../src/types.js";
+import { Expense, Budget, Notification, SecuritySettings, AppState } from "../src/types.js";
 import mongoose from "mongoose";
 import {
   Expense as ExpenseModel,
   Budget as BudgetModel,
-  BankConnection as BankConnectionModel,
   Notification as NotificationModel,
   SecuritySettings as SecuritySettingsModel
 } from "../src/db/models.js";
-import { validateCBU } from "../src/utils/cbu.js";
 
 dotenv.config();
 
@@ -57,8 +55,7 @@ const defaultDb: AppState = {
       description: "Compra semanal Coto",
       date: "2026-07-10",
       paymentMethod: "Tarjeta de Crédito",
-      isAutoClassified: true,
-      bankAccountId: "bank-1"
+      isAutoClassified: true
     },
     {
       id: "exp-2",
@@ -67,8 +64,7 @@ const defaultDb: AppState = {
       description: "Carga de SUBE y taxi",
       date: "2026-07-09",
       paymentMethod: "Tarjeta de Crédito",
-      isAutoClassified: false,
-      bankAccountId: "bank-1"
+      isAutoClassified: false
     },
     {
       id: "exp-3",
@@ -77,8 +73,7 @@ const defaultDb: AppState = {
       description: "Factura de luz Edesur",
       date: "2026-07-05",
       paymentMethod: "Transferencia",
-      isAutoClassified: true,
-      bankAccountId: "bank-1"
+      isAutoClassified: true
     },
     {
       id: "exp-4",
@@ -87,8 +82,7 @@ const defaultDb: AppState = {
       description: "Suscripción Netflix Premium",
       date: "2026-07-01",
       paymentMethod: "Tarjeta de Crédito",
-      isAutoClassified: true,
-      bankAccountId: "bank-1"
+      isAutoClassified: true
     },
     {
       id: "exp-5",
@@ -174,35 +168,7 @@ const defaultDb: AppState = {
       ]
     }
   ],
-  bankConnections: [
-    {
-      id: "bank-1",
-      bankName: "BBVA Argentina",
-      accountType: "Caja de Ahorros",
-      balance: 2450750.0,
-      lastSynced: "2026-07-11 09:30",
-      accountNumber: "AR34 0017 **** 4321",
-      status: "connected"
-    },
-    {
-      id: "bank-2",
-      bankName: "Banco Galicia",
-      accountType: "Cuenta Corriente",
-      balance: 12800400.0,
-      lastSynced: "2026-07-11 08:15",
-      accountNumber: "AR91 0007 **** 8765",
-      status: "connected"
-    }
-  ],
   notifications: [
-    {
-      id: "notif-1",
-      title: "Sincronización Bancaria",
-      message: "Tus cuentas de BBVA y Galicia se han sincronizado correctamente.",
-      date: "2026-07-11T09:30:00Z",
-      read: true,
-      type: "sync"
-    },
     {
       id: "notif-2",
       title: "Alerta de Presupuesto",
@@ -491,17 +457,15 @@ app.get("/api/data", authenticateToken, async (req, res) => {
     
     const expenses = await ExpenseModel.find().sort({ date: -1 });
     const budgets = await BudgetModel.find();
-    const bankConnections = await BankConnectionModel.find();
     const notifications = await NotificationModel.find().sort({ date: -1 });
     let securitySettings = await SecuritySettingsModel.findOne();
     if (!securitySettings) {
       securitySettings = await SecuritySettingsModel.create(defaultDb.securitySettings);
     }
-    
+
     res.json({
       expenses,
       budgets,
-      bankConnections,
       notifications,
       securitySettings
     });
@@ -530,7 +494,7 @@ app.post("/api/expenses", authenticateToken, async (req, res) => {
       expense.description = rawExpense.description || expense.description;
       expense.date = rawExpense.date || expense.date;
       expense.paymentMethod = rawExpense.paymentMethod || expense.paymentMethod;
-      expense.bankAccountId = rawExpense.bankAccountId || expense.bankAccountId;
+      expense.bank = rawExpense.bank || expense.bank;
       await expense.save();
     } else {
       // Add new
@@ -543,21 +507,11 @@ app.post("/api/expenses", authenticateToken, async (req, res) => {
         date: rawExpense.date || new Date().toISOString().substring(0, 10),
         paymentMethod: rawExpense.paymentMethod || "Tarjeta",
         isAutoClassified: !rawExpense.category,
-        bankAccountId: rawExpense.bankAccountId,
+        bank: rawExpense.bank,
         isSuspicious: (parseFloat(rawExpense.amount) || 0) > 500,
         items: Array.isArray(rawExpense.items) ? rawExpense.items : undefined
       });
-      
-      // Deduct from bank connection if bankAccountId is provided
-      if (expense.bankAccountId) {
-        const bank = await BankConnectionModel.findOne({ id: expense.bankAccountId });
-        if (bank) {
-          bank.balance -= expense.amount;
-          bank.lastSynced = new Date().toISOString().replace("T", " ").substring(0, 16);
-          await bank.save();
-        }
-      }
-      
+
       await expense.save();
       
       // Create notification if the expense is flagged as suspicious
@@ -595,15 +549,6 @@ app.delete("/api/expenses/:id", authenticateToken, async (req, res) => {
     
     if (!expense) {
       return res.status(404).json({ success: false, error: "Gasto no encontrado" });
-    }
-
-    // Refund bank balance if connected
-    if (expense.bankAccountId) {
-      const bank = await BankConnectionModel.findOne({ id: expense.bankAccountId });
-      if (bank) {
-        bank.balance += expense.amount;
-        await bank.save();
-      }
     }
 
     await ExpenseModel.deleteOne({ id });
@@ -710,156 +655,6 @@ app.post("/api/budgets", authenticateToken, async (req, res) => {
 
     const budgets = await BudgetModel.find();
     res.json({ success: true, budgets });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Add a bank connection
-app.post("/api/banks", authenticateToken, async (req, res) => {
-  try {
-    await connectDB();
-    const newBank = req.body;
-
-    const cbuValidation = validateCBU(newBank.cbu || newBank.accountNumber || "");
-    if (!cbuValidation.valid) {
-      return res.status(400).json({ success: false, error: cbuValidation.error });
-    }
-
-    const bank = await BankConnectionModel.create({
-      id: newBank.id || `bank-${Date.now()}`,
-      bankName: cbuValidation.bankName,
-      accountType: newBank.accountType || "Cuenta Corriente",
-      balance: parseFloat(newBank.balance) || 0,
-      lastSynced: new Date().toISOString().replace("T", " ").substring(0, 16),
-      accountNumber: newBank.cbu || newBank.accountNumber,
-      alias: (newBank.alias || "").trim() || undefined,
-      status: "connected"
-    });
-    
-    // Add notification
-    await NotificationModel.create({
-      id: `notif-link-${Date.now()}`,
-      title: "Nueva Cuenta Vinculada",
-      message: `Has sincronizado exitosamente la cuenta '${bank.accountType}' de ${bank.bankName}.`,
-      date: new Date().toISOString(),
-      read: false,
-      type: "sync"
-    });
-    
-    res.json({ success: true, bank });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Delete a bank connection (unlink)
-app.delete("/api/banks/:id", authenticateToken, async (req, res) => {
-  try {
-    await connectDB();
-    const id = req.params.id;
-    
-    const bankExists = await BankConnectionModel.exists({ id });
-    if (!bankExists) {
-      return res.status(404).json({ success: false, error: "Cuenta bancaria no encontrada" });
-    }
-    
-    await BankConnectionModel.deleteOne({ id });
-    res.json({ success: true, id });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Sync bank connection simulator (Vercel-compatible inline execution)
-app.post("/api/banks/sync/:id", authenticateToken, async (req, res) => {
-  try {
-    await connectDB();
-    const id = req.params.id;
-    const bank = await BankConnectionModel.findOne({ id });
-    
-    if (!bank) {
-      return res.status(404).json({ success: false, error: "Cuenta bancaria no encontrada" });
-    }
-
-    // Set temporary status to connected but resolve sync inline
-    bank.status = "connected";
-    bank.lastSynced = new Date().toISOString().replace("T", " ").substring(0, 16);
-    
-    // Choose randomly between a standard auto-classified expense OR a suspicious transaction
-    const isSuspiciousEvent = Math.random() > 0.6;
-    let syncMsg = "";
-    
-    if (isSuspiciousEvent) {
-      // Trigger a suspicious alert transaction!
-      const amount = parseFloat((Math.random() * 40000 + 40000).toFixed(2));
-      const desc = "Retiro de efectivo cajero extranjero" + (Math.random() > 0.5 ? " (Moscú)" : " (Anónimo)");
-      const newExp = new ExpenseModel({
-        id: `exp-${Date.now()}`,
-        amount,
-        category: "Otros",
-        description: desc,
-        date: new Date().toISOString().substring(0, 10),
-        paymentMethod: "Tarjeta",
-        isSuspicious: true,
-        isAutoClassified: true,
-        bankAccountId: id
-      });
-      
-      bank.balance -= amount;
-      await bank.save();
-      await newExp.save();
-      
-      await NotificationModel.create({
-        id: `notif-${Date.now()}-susp-sync`,
-        title: `Movimiento Sospechoso en ${bank.bankName}`,
-        message: `Alerta en tiempo real: Retiro sospechoso de $${amount} en cajero automático inusual. Verifica tu tarjeta de débito inmediatamente.`,
-        date: new Date().toISOString(),
-        read: false,
-        type: "suspicious"
-      });
-      
-      await checkBudgetsAndNotifyDB(newExp);
-      syncMsg = `¡Sincronización finalizada con alertas de movimientos sospechosos!`;
-    } else {
-      // Sync regular transaction
-      const randomExpenses = [
-        { desc: "Estación de Servicio YPF", amt: 48000.00, cat: "Transporte" },
-        { desc: "Súper Coto", amt: 22300.00, cat: "Alimentación" },
-        { desc: "Restaurante Don Julio", amt: 38500.00, cat: "Alimentación" },
-        { desc: "Farmacity", amt: 14200.00, cat: "Salud" }
-      ];
-      const picked = randomExpenses[Math.floor(Math.random() * randomExpenses.length)];
-      
-      const newExp = new ExpenseModel({
-        id: `exp-${Date.now()}`,
-        amount: picked.amt,
-        category: picked.cat,
-        description: picked.desc,
-        date: new Date().toISOString().substring(0, 10),
-        paymentMethod: "Tarjeta de Crédito",
-        isAutoClassified: true,
-        bankAccountId: id
-      });
-      
-      bank.balance -= picked.amt;
-      await bank.save();
-      await newExp.save();
-      
-      await NotificationModel.create({
-        id: `notif-${Date.now()}-sync-done`,
-        title: `Cargos Sincronizados - ${bank.bankName}`,
-        message: `Se ha descargado una nueva transacción automática: '${picked.desc}' por $${picked.amt} asignada a '${picked.cat}'.`,
-        date: new Date().toISOString(),
-        read: false,
-        type: "sync"
-      });
-      
-      await checkBudgetsAndNotifyDB(newExp);
-      syncMsg = `Sincronización completada. Se ha importado 1 nueva transacción.`;
-    }
-
-    res.json({ success: true, message: syncMsg });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

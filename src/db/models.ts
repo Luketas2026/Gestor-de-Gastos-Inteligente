@@ -11,7 +11,7 @@ const ExpenseSchema = new mongoose.Schema({
   isSuspicious: { type: Boolean, default: false },
   receiptUrl: { type: String },
   items: { type: [String] },
-  bankAccountId: { type: String },
+  bank: { type: String },
   isAutoClassified: { type: Boolean, default: false }
 });
 
@@ -30,23 +30,6 @@ const BudgetSchema = new mongoose.Schema({
   spent: { type: Number, required: true, default: 0 },
   month: { type: String, required: true }, // Format: YYYY-MM
   alerts: { type: [BudgetAlertSchema], default: [] }
-});
-
-// Schema for bank accounts/connections
-const BankConnectionSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  bankName: { type: String, required: true },
-  accountType: { type: String, required: true },
-  balance: { type: Number, required: true },
-  lastSynced: { type: String, required: true },
-  accountNumber: { type: String, required: true },
-  alias: { type: String },
-  status: {
-    type: String, 
-    required: true, 
-    enum: ["connected", "syncing", "error", "disconnected"], 
-    default: "connected" 
-  }
 });
 
 // Schema for notifications
@@ -74,6 +57,5 @@ const SecuritySettingsSchema = new mongoose.Schema({
 
 export const Expense = mongoose.model("Expense", ExpenseSchema);
 export const Budget = mongoose.model("Budget", BudgetSchema);
-export const BankConnection = mongoose.model("BankConnection", BankConnectionSchema);
 export const Notification = mongoose.model("Notification", NotificationSchema);
 export const SecuritySettings = mongoose.model("SecuritySettings", SecuritySettingsSchema);

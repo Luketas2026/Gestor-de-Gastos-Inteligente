@@ -8,7 +8,7 @@ export interface Expense {
   isSuspicious?: boolean;
   receiptUrl?: string;
   items?: string[];
-  bankAccountId?: string;
+  bank?: string;
   isAutoClassified?: boolean;
 }
 
@@ -23,17 +23,6 @@ export interface Budget {
     triggered: boolean;
     triggeredAt?: string;
   }[];
-}
-
-export interface BankConnection {
-  id: string;
-  bankName: string;
-  accountType: string; // e.g., "Corriente", "Ahorros", "Tarjeta de Crédito"
-  balance: number;
-  lastSynced: string;
-  accountNumber: string;
-  alias?: string; // apodo opcional (no resuelve a CBU, solo etiqueta visual)
-  status: "connected" | "syncing" | "error" | "disconnected";
 }
 
 export interface Notification {
@@ -56,7 +45,6 @@ export interface SecuritySettings {
 export interface AppState {
   expenses: Expense[];
   budgets: Budget[];
-  bankConnections: BankConnection[];
   notifications: Notification[];
   securitySettings: SecuritySettings;
 }
