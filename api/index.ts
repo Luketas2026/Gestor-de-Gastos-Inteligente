@@ -4,6 +4,9 @@ import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import ExcelJS from "exceljs";
+import PDFDocument from "pdfkit";
+import { Resend } from "resend";
 import { Expense, Budget, Notification, SecuritySettings, AppState } from "../src/types.js";
 import mongoose from "mongoose";
 import {
@@ -14,6 +17,10 @@ import {
 } from "../src/db/models.js";
 
 dotenv.config();
+
+// Initialize Resend email client if a key is configured
+const resendApiKey = process.env.RESEND_API_KEY;
+const resendClient = resendApiKey ? new Resend(resendApiKey) : null;
 
 const app = express();
 const PORT = 3000;
@@ -833,7 +840,153 @@ app.post("/api/scan-receipt", authenticateToken, async (req, res) => {
   });
 });
 
-// Export endpoints & periodic emails simulation
+// Report generation helpers (real CSV/XLSX/PDF, no simulated content)
+function buildCsvBuffer(expenses: any[]): Buffer {
+  const headers = "ID,Fecha,Descripción,Importe,Categoría,Método Pago,Sospechoso\n";
+  const rows = expenses.map(e =>
+    `"${e.id}","${e.date}","${String(e.description).replace(/"/g, '""')}",${e.amount},"${e.category}","${e.paymentMethod}","${e.isSuspicious ? "SÍ" : "NO"}"`
+  ).join("\n");
+  return Buffer.from(headers + rows, "utf-8");
+}
+
+async function buildXlsxBuffer(expenses: any[], budgets: any[]): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+
+  const expensesSheet = workbook.addWorksheet("Gastos");
+  expensesSheet.columns = [
+    { header: "Fecha", key: "date", width: 12 },
+    { header: "Descripción", key: "description", width: 32 },
+    { header: "Categoría", key: "category", width: 18 },
+    { header: "Importe", key: "amount", width: 14 },
+    { header: "Método de Pago", key: "paymentMethod", width: 18 },
+    { header: "Sospechoso", key: "suspicious", width: 12 }
+  ];
+  expensesSheet.getRow(1).font = { bold: true };
+  expenses.forEach(e => {
+    expensesSheet.addRow({
+      date: e.date,
+      description: e.description,
+      category: e.category,
+      amount: e.amount,
+      paymentMethod: e.paymentMethod,
+      suspicious: e.isSuspicious ? "SÍ" : "NO"
+    });
+  });
+
+  const budgetsSheet = workbook.addWorksheet("Presupuestos");
+  budgetsSheet.columns = [
+    { header: "Categoría", key: "category", width: 18 },
+    { header: "Gastado", key: "spent", width: 14 },
+    { header: "Límite", key: "limit", width: 14 },
+    { header: "% Usado", key: "pct", width: 12 }
+  ];
+  budgetsSheet.getRow(1).font = { bold: true };
+  budgets.forEach(b => {
+    budgetsSheet.addRow({
+      category: b.category,
+      spent: b.spent,
+      limit: b.limit,
+      pct: b.limit > 0 ? `${Math.round((b.spent / b.limit) * 100)}%` : "-"
+    });
+  });
+
+  const arrayBuffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+function buildPdfBuffer(expenses: any[], budgets: any[]): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", chunk => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+    doc.fontSize(18).text("Finterra - Reporte Mensual de Gastos", { align: "center" });
+    doc.moveDown(0.5);
+    doc.fontSize(10).fillColor("#64748b").text(`Generado el ${new Date().toLocaleDateString("es-AR")}`, { align: "center" });
+    doc.moveDown(1.5);
+
+    doc.fontSize(13).fillColor("#0f172a").text("Resumen");
+    doc.moveDown(0.3);
+    doc.fontSize(11).fillColor("#334155").text(`Gasto total: $${totalExpenses.toFixed(2)}`);
+    doc.moveDown(1);
+
+    doc.fontSize(13).fillColor("#0f172a").text("Presupuestos por categoría");
+    doc.moveDown(0.3);
+    budgets.forEach(b => {
+      const pct = b.limit > 0 ? Math.round((b.spent / b.limit) * 100) : 0;
+      doc.fontSize(10).fillColor("#334155").text(`${b.category}: $${b.spent.toFixed(2)} de $${b.limit.toFixed(2)} (${pct}%)`);
+    });
+    doc.moveDown(1);
+
+    doc.fontSize(13).fillColor("#0f172a").text("Detalle de gastos");
+    doc.moveDown(0.3);
+    expenses.forEach(e => {
+      doc.fontSize(9).fillColor("#334155").text(
+        `${e.date}   ${e.description}   [${e.category}]   $${e.amount.toFixed(2)}${e.isSuspicious ? "  ⚠ SOSPECHOSO" : ""}`
+      );
+    });
+
+    doc.end();
+  });
+}
+
+function buildReportEmailHtml(expenses: any[], budgets: any[], email: string): string {
+  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const categoryTotals = expenses.reduce((acc, e) => {
+    acc[e.category] = (acc[e.category] || 0) + e.amount;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <h2 style="color: #0f172a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">📊 Informe Financiero Mensual</h2>
+      <p>Hola, <strong>${email}</strong>.</p>
+      <p>Aquí tienes tu resumen de gastos y presupuestos mensuales acumulado al día de hoy.</p>
+
+      <div style="background-color: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0;">
+        <span style="color: #64748b; font-size: 14px;">GASTO TOTAL DEL MES</span>
+        <h1 style="color: #ef4444; margin: 5px 0 0 0;">$${totalExpenses.toFixed(2)}</h1>
+      </div>
+
+      <h3>Gastos por Categoría:</h3>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <thead>
+          <tr style="background-color: #f1f5f9;">
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0;">Categoría</th>
+            <th style="padding: 10px; text-align: right; border-bottom: 1px solid #e2e8f0;">Total Gastado</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${Object.entries(categoryTotals).map(([cat, val]) => `
+            <tr>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${cat}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #334155;">$${(val as number).toFixed(2)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+
+      <h3>Resumen del Presupuesto:</h3>
+      <ul style="padding-left: 20px; color: #475569;">
+        ${budgets.map(b => {
+          const pct = b.limit > 0 ? Math.round((b.spent / b.limit) * 100) : 0;
+          const color = pct >= 100 ? "#ef4444" : pct >= 80 ? "#f97316" : "#10b981";
+          return `<li style="margin-bottom: 8px;"><strong>${b.category}</strong>: $${b.spent.toFixed(2)} de $${b.limit} limitados (<span style="color: ${color}; font-weight: bold;">${pct}%</span>)</li>`;
+        }).join("")}
+      </ul>
+
+      <div style="margin-top: 30px; text-align: center; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+        Informe generado por tu Gestor de Gastos Inteligente (Finterra).
+      </div>
+    </div>
+  `;
+}
+
+// Export endpoints: real CSV/XLSX/PDF downloads and real email delivery via Resend
 app.post("/api/export", authenticateToken, async (req, res) => {
   try {
     await connectDB();
@@ -843,79 +996,62 @@ app.post("/api/export", authenticateToken, async (req, res) => {
     const budgets = await BudgetModel.find();
 
     if (email) {
-      // Periodic summary simulated email report
-      const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-      const categoryTotals = expenses.reduce((acc, e) => {
-        acc[e.category] = (acc[e.category] || 0) + e.amount;
-        return acc;
-      }, {} as Record<string, number>);
+      if (!resendClient) {
+        return res.status(503).json({
+          success: false,
+          error: "El envío de email no está configurado (falta RESEND_API_KEY en el servidor)."
+        });
+      }
 
-      const bodyHtml = `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <h2 style="color: #0f172a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">📊 Informe Financiero Mensual Periódico</h2>
-          <p>Hola, <strong>${email}</strong>.</p>
-          <p>Aquí tienes tu resumen automático de gastos y presupuestos mensuales acumulado al día de hoy.</p>
-          
-          <div style="background-color: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0;">
-            <span style="color: #64748b; font-size: 14px;">GASTO TOTAL DEL MES</span>
-            <h1 style="color: #ef4444; margin: 5px 0 0 0;">$${totalExpenses.toFixed(2)}</h1>
-          </div>
+      const bodyHtml = buildReportEmailHtml(expenses, budgets, email);
+      const pdfBuffer = await buildPdfBuffer(expenses, budgets);
 
-          <h3>Gastos por Categoría:</h3>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-            <thead>
-              <tr style="background-color: #f1f5f9;">
-                <th style="padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0;">Categoría</th>
-                <th style="padding: 10px; text-align: right; border-bottom: 1px solid #e2e8f0;">Total Gastado</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${Object.entries(categoryTotals).map(([cat, val]) => `
-                <tr>
-                  <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${cat}</td>
-                  <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #334155;">$${val.toFixed(2)}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
+      const { data, error } = await resendClient.emails.send({
+        from: "Finterra <onboarding@resend.dev>",
+        to: email,
+        subject: "Informe Mensual de Gastos - Finterra",
+        html: bodyHtml,
+        attachments: [
+          {
+            filename: `reporte_mensual_${new Date().toISOString().substring(0, 7)}.pdf`,
+            content: pdfBuffer.toString("base64")
+          }
+        ]
+      });
 
-          <h3>Resumen del Presupuesto:</h3>
-          <ul style="padding-left: 20px; color: #475569;">
-            ${budgets.map(b => {
-              const pct = b.limit > 0 ? Math.round((b.spent / b.limit) * 100) : 0;
-              const color = pct >= 100 ? "#ef4444" : pct >= 80 ? "#f97316" : "#10b981";
-              return `<li style="margin-bottom: 8px;"><strong>${b.category}</strong>: $${b.spent.toFixed(2)} de $${b.limit} limitados (<span style="color: ${color}; font-weight: bold;">${pct}%</span>)</li>`;
-            }).join("")}
-          </ul>
-
-          <div style="margin-top: 30px; text-align: center; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
-            Este es un correo periódico automatizado enviado por tu Gestor de Gastos Inteligente.<br>
-            Cifrado de extremo a extremo activo y sincronizado en la nube.
-          </div>
-        </div>
-      `;
+      if (error) {
+        return res.status(502).json({ success: false, error: error.message || "Error al enviar el email." });
+      }
 
       return res.json({
         success: true,
-        message: `El informe periódico en formato ${format.toUpperCase()} ha sido enviado con éxito a la dirección de correo electrónico ${email}.`,
-        previewHtml: bodyHtml
+        message: `El informe fue enviado a ${email}.`,
+        previewHtml: bodyHtml,
+        emailId: data?.id
       });
     }
 
-    // Handle report export files creation simulation
-    const csvHeaders = "ID,Fecha,Descripción,Importe,Categoría,Método Pago,Sospechoso\n";
-    const csvRows = expenses.map(e => 
-      `"${e.id}","${e.date}","${e.description.replace(/"/g, '""')}",${e.amount},"${e.category}","${e.paymentMethod}","${e.isSuspicious ? 'SÍ' : 'NO'}"`
-    ).join("\n");
+    const fileBase = `reporte_mensual_${new Date().toISOString().substring(0, 7)}`;
 
-    const csvContent = csvHeaders + csvRows;
+    if (format === "excel") {
+      const buffer = await buildXlsxBuffer(expenses, budgets);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileBase}.xlsx"`);
+      return res.send(buffer);
+    }
 
-    res.json({
-      success: true,
-      format,
-      csvContent,
-      fileName: `reporte_mensual_${new Date().toISOString().substring(0, 7)}.${format === "excel" || format === "csv" ? "csv" : "html"}`
-    });
+    if (format === "pdf") {
+      const buffer = await buildPdfBuffer(expenses, budgets);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileBase}.pdf"`);
+      return res.send(buffer);
+    }
+
+    // Default: CSV
+    const buffer = buildCsvBuffer(expenses);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileBase}.csv"`);
+    return res.send(buffer);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

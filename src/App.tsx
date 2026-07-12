@@ -108,6 +108,8 @@ export default function App() {
   });
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterCategory, setFilterCategory] = useState<string>("Todos");
+  const [reportEmail, setReportEmail] = useState<string>("");
+  const [sendingReport, setSendingReport] = useState<boolean>(false);
 
   // Security Simulator States
   const [showBiometricScreen, setShowBiometricScreen] = useState<boolean>(true);
@@ -507,7 +509,7 @@ export default function App() {
     }
   };
 
-  // Simulate report export download (CSV/HTML)
+  // Download a real CSV/XLSX/PDF report file generated server-side
   const handleExportData = async (format: "csv" | "pdf" | "excel") => {
     try {
       const res = await authFetch("/api/export", {
@@ -515,47 +517,57 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ format })
       });
+
       if (res.ok) {
-        const result = await res.json();
-        
-        // Setup download in browser
-        const blob = new Blob([result.csvContent || "Reporte vacio"], { type: "text/csv;charset=utf-8;" });
+        const blob = await res.blob();
+        const disposition = res.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="([^"]+)"/);
+        const fileName = match?.[1] || `reporte.${format === "excel" ? "xlsx" : format}`;
+
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
-        link.setAttribute("download", result.fileName);
+        link.setAttribute("download", fileName);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
 
-        showToast(`Reporte en formato ${format.toUpperCase()} generado y descargado correctamente.`, "success");
+        showToast(`Reporte ${fileName} descargado correctamente.`, "success");
+      } else {
+        const result = await res.json().catch(() => null);
+        showToast(result?.error || "Error al generar exportación", "error");
       }
     } catch (err) {
       showToast("Error al generar exportación", "error");
     }
   };
 
-  // Simulate email report periodically
-  const handleSendEmailReport = async () => {
+  // Send the monthly report by real email via the backend (Resend)
+  const handleSendEmailReport = async (email: string) => {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast("Ingresá un email válido", "error");
+      return;
+    }
     try {
-      showToast("Generando reporte y conectando con servidor de correo...", "info");
+      showToast("Generando reporte y enviando el correo...", "info");
       const res = await authFetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          format: "pdf",
-          email: "luketastoffolon@gmail.com"
-        })
+        body: JSON.stringify({ format: "pdf", email })
       });
 
-      if (res.ok) {
-        const result = await res.json();
+      const result = await res.json().catch(() => null);
+
+      if (res.ok && result?.success) {
         setShowEmailPreview({
           open: true,
           html: result.previewHtml,
-          email: "luketastoffolon@gmail.com"
+          email
         });
-        showToast(`¡Informe mensual programado y enviado a luketastoffolon@gmail.com!`, "success");
+        showToast(`¡Informe enviado a ${email}!`, "success");
+      } else {
+        showToast(result?.error || "Error al enviar el reporte por email", "error");
       }
     } catch (err) {
       showToast("Error al procesar el reporte de correo", "error");
@@ -565,6 +577,27 @@ export default function App() {
   // Local helper calculations
   const totalMonthlySpent = appData.expenses.reduce((sum, e) => sum + e.amount, 0);
   const totalMonthlyBudget = appData.budgets.reduce((sum, b) => sum + b.limit, 0);
+
+  // Real daily spend for the current month, used by the trend chart
+  const dailyTrend = (() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const totalsByDay = new Array(daysInMonth).fill(0);
+
+    appData.expenses.forEach(e => {
+      if (e.date.startsWith(monthPrefix)) {
+        const day = parseInt(e.date.substring(8, 10), 10);
+        if (day >= 1 && day <= daysInMonth) {
+          totalsByDay[day - 1] += e.amount;
+        }
+      }
+    });
+
+    return { totalsByDay, daysInMonth, monthLabel: now.toLocaleDateString("es-AR", { month: "short" }) };
+  })();
 
   // Filter & Search expenses
   const filteredExpenses = appData.expenses.filter(e => {
@@ -1696,51 +1729,61 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Monthly Trend simulated view */}
+                  {/* Monthly Trend - real daily spend for the current month */}
                   <div className="p-6 rounded-3xl dark:bg-slate-900 bg-white border border-slate-200 dark:border-slate-800 shadow-md">
                     <h3 className="text-sm font-bold mb-4">Gasto Diario - Historial de Tendencias</h3>
                     <div className="h-60 flex items-center justify-center">
-                      <svg className="w-full h-full" viewBox="0 0 400 220">
-                        {/* Beautiful curve grid representing daily transactions */}
-                        <path
-                          d="M 30 140 Q 90 90, 150 120 T 270 60 T 370 110"
-                          fill="none"
-                          className="stroke-emerald-400"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                        />
-                        {/* Dots */}
-                        <circle cx="30" cy="140" r="5" className="fill-emerald-400" />
-                        <circle cx="150" cy="120" r="5" className="fill-emerald-400" />
-                        <circle cx="270" cy="60" r="5" className="fill-emerald-400" />
-                        <circle cx="370" cy="110" r="5" className="fill-emerald-400" />
+                      {(() => {
+                        const { totalsByDay, daysInMonth, monthLabel } = dailyTrend;
+                        const maxAmount = Math.max(...totalsByDay, 1);
+                        const stepX = daysInMonth > 1 ? 340 / (daysInMonth - 1) : 0;
+                        const points = totalsByDay.map((amount, idx) => ({
+                          x: 30 + idx * stepX,
+                          y: 180 - (amount / maxAmount) * 140,
+                          amount
+                        }));
+                        const pathD = points.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+                        const hasAnySpend = totalsByDay.some(a => a > 0);
 
-                        {/* Reference lines */}
-                        <line x1="30" y1="20" x2="30" y2="180" className="stroke-slate-200 dark:stroke-slate-800" strokeWidth="1" strokeDasharray="3" />
-                        <line x1="370" y1="20" x2="370" y2="180" className="stroke-slate-200 dark:stroke-slate-800" strokeWidth="1" strokeDasharray="3" />
+                        return (
+                          <svg className="w-full h-full" viewBox="0 0 400 220">
+                            {hasAnySpend ? (
+                              <>
+                                <path d={pathD} fill="none" className="stroke-emerald-400" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                {points.filter(p => p.amount > 0).map((p, idx) => (
+                                  <circle key={idx} cx={p.x} cy={p.y} r="3.5" className="fill-emerald-400" />
+                                ))}
+                              </>
+                            ) : (
+                              <text x="200" y="110" textAnchor="middle" className="fill-slate-400 text-3xs font-sans">Sin gastos registrados este mes</text>
+                            )}
 
-                        <text x="30" y="195" className="fill-slate-400 text-4xs font-sans" textAnchor="middle">01 Jul</text>
-                        <text x="150" y="195" className="fill-slate-400 text-4xs font-sans" textAnchor="middle">10 Jul</text>
-                        <text x="270" y="195" className="fill-slate-400 text-4xs font-sans" textAnchor="middle">20 Jul</text>
-                        <text x="370" y="195" className="fill-slate-400 text-4xs font-sans" textAnchor="middle">30 Jul</text>
-                      </svg>
+                            <line x1="30" y1="20" x2="30" y2="180" className="stroke-slate-200 dark:stroke-slate-800" strokeWidth="1" strokeDasharray="3" />
+                            <line x1="370" y1="20" x2="370" y2="180" className="stroke-slate-200 dark:stroke-slate-800" strokeWidth="1" strokeDasharray="3" />
+
+                            <text x="30" y="195" className="fill-slate-400 text-4xs font-sans" textAnchor="middle">01 {monthLabel}</text>
+                            <text x="200" y="195" className="fill-slate-400 text-4xs font-sans" textAnchor="middle">{Math.ceil(daysInMonth / 2)} {monthLabel}</text>
+                            <text x="370" y="195" className="fill-slate-400 text-4xs font-sans" textAnchor="middle">{daysInMonth} {monthLabel}</text>
+                          </svg>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
 
                 {/* Export panel options */}
                 <div className="p-6 rounded-3xl dark:bg-slate-900 bg-white border border-slate-200 dark:border-slate-800 shadow-md">
-                  <h3 className="text-sm font-bold mb-4">Exportación y Reportes Periódicos</h3>
+                  <h3 className="text-sm font-bold mb-4">Exportación y Reportes</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    
-                    {/* CSV/Excel Export */}
+
+                    {/* Excel Export */}
                     <div className="p-4 rounded-2xl dark:bg-slate-950/20 border dark:border-slate-800 flex flex-col justify-between">
                       <div>
                         <div className="p-2.5 bg-amber-500/10 text-amber-500 rounded-xl w-max mb-3">
                           <FileSpreadsheet className="h-5 w-5" />
                         </div>
-                        <h4 className="text-xs font-bold mb-1">Exportar Reporte Mensual (Excel/CSV)</h4>
-                        <p className="text-3xs text-slate-400">Descarga un archivo compatible con Excel con todos tus gastos diarios organizados.</p>
+                        <h4 className="text-xs font-bold mb-1">Exportar Reporte Mensual (Excel)</h4>
+                        <p className="text-3xs text-slate-400">Descarga un archivo .xlsx real con tus gastos y presupuestos, listo para abrir en Excel.</p>
                       </div>
                       <button
                         onClick={() => handleExportData("excel")}
@@ -1758,10 +1801,10 @@ export default function App() {
                           <FileText className="h-5 w-5" />
                         </div>
                         <h4 className="text-xs font-bold mb-1">Descargar Reporte PDF</h4>
-                        <p className="text-3xs text-slate-400">Genera una plantilla visual y estructurada de tu presupuesto mensual para imprimir.</p>
+                        <p className="text-3xs text-slate-400">Genera un PDF real con el resumen de gastos y presupuestos, listo para imprimir.</p>
                       </div>
                       <button
-                        onClick={() => handleExportData("csv")}
+                        onClick={() => handleExportData("pdf")}
                         className="mt-4 w-full py-2 bg-rose-500 hover:bg-rose-600 text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center space-x-1.5"
                       >
                         <Download className="h-4.5 w-4.5" />
@@ -1769,21 +1812,33 @@ export default function App() {
                       </button>
                     </div>
 
-                    {/* Email summary simulator (periódicamente) */}
+                    {/* Email report delivery via Resend */}
                     <div className="p-4 rounded-2xl dark:bg-slate-950/20 border dark:border-slate-800 flex flex-col justify-between">
                       <div>
                         <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl w-max mb-3">
                           <Mail className="h-5 w-5" />
                         </div>
-                        <h4 className="text-xs font-bold mb-1">Informe Periódico por Correo</h4>
-                        <p className="text-3xs text-slate-400">Simula el envío periódico automatizado del informe completo directamente a tu email.</p>
+                        <h4 className="text-xs font-bold mb-1">Enviar Informe por Correo</h4>
+                        <p className="text-3xs text-slate-400 mb-2">Te enviamos el informe (con el PDF adjunto) al email que pongas abajo.</p>
+                        <input
+                          type="email"
+                          placeholder="tu@email.com"
+                          value={reportEmail}
+                          onChange={e => setReportEmail(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500 text-slate-800 dark:text-slate-100"
+                        />
                       </div>
                       <button
-                        onClick={handleSendEmailReport}
-                        className="mt-4 w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center space-x-1.5"
+                        onClick={async () => {
+                          setSendingReport(true);
+                          await handleSendEmailReport(reportEmail);
+                          setSendingReport(false);
+                        }}
+                        disabled={sendingReport || !reportEmail}
+                        className="mt-4 w-full py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center space-x-1.5"
                       >
                         <Mail className="h-4.5 w-4.5" />
-                        <span>Enviar por Email</span>
+                        <span>{sendingReport ? "Enviando..." : "Enviar por Email"}</span>
                       </button>
                     </div>
                   </div>
@@ -1804,9 +1859,9 @@ export default function App() {
               <div>
                 <span className="text-xs font-bold text-slate-800 flex items-center space-x-1">
                   <Mail className="h-4 w-4 text-emerald-600" />
-                  <span>Simulación de Correo Enviado</span>
+                  <span>Correo Enviado</span>
                 </span>
-                <span className="text-[10px] text-slate-400 block">De: reportes@finterra.cloud • Para: {showEmailPreview.email}</span>
+                <span className="text-[10px] text-slate-400 block">De: Finterra &lt;onboarding@resend.dev&gt; • Para: {showEmailPreview.email}</span>
               </div>
               <button
                 onClick={() => setShowEmailPreview(null)}
@@ -1825,7 +1880,7 @@ export default function App() {
             </div>
 
             <div className="p-4 bg-slate-100 border-t border-slate-200 flex justify-between items-center text-3xs text-slate-400">
-              <span>Sincronizado correctamente • Finterra periodic core</span>
+              <span>Enviado con PDF adjunto</span>
               <button
                 onClick={() => setShowEmailPreview(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-2xs"
