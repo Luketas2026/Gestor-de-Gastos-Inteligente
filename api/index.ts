@@ -737,7 +737,7 @@ app.post("/api/scan-receipt", authenticateToken, async (req, res) => {
         },
       };
 
-      const prompt = `Analiza este recibo de compra. Extrae con precisión los siguientes datos en español y devuélvelos estructurados en el formato JSON especificado en el esquema. Intenta deducir la categoría correcta entre: 'Alimentación', 'Transporte', 'Servicios', 'Entretenimiento', 'Salud', o 'Otros'.`;
+      const prompt = `Analiza este recibo, tique o factura de compra (puede ser una foto o un documento PDF). Extrae con precisión los siguientes datos en español y devuélvelos estructurados en el formato JSON especificado en el esquema. Intenta deducir la categoría correcta entre: 'Alimentación', 'Transporte', 'Servicios', 'Entretenimiento', 'Salud', o 'Otros'.`;
 
       const response = await aiClient.models.generateContent({
         model: "gemini-3.5-flash",

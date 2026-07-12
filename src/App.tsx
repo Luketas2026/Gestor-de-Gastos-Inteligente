@@ -1055,13 +1055,20 @@ export default function App() {
                       <span>Escanear Recibo con IA (OCR)</span>
                     </h3>
                     <p className="text-xs text-slate-400 mb-4">
-                      Usa la cámara de tu móvil o sube una foto del tique. Nuestra IA extraerá automáticamente comercio, importe, fecha y artículos.
+                      Usa la cámara de tu móvil, subí una foto del tique, o adjuntá un PDF (ej. factura digital). Nuestra IA extraerá automáticamente comercio, importe, fecha y artículos.
                     </p>
 
                     <div className="space-y-4">
                       {selectedImage ? (
                         <div className="relative rounded-2xl overflow-hidden border dark:border-slate-700 bg-slate-950 aspect-video flex items-center justify-center">
-                          <img src={selectedImage} alt="Receipt preview" className="max-h-full max-w-full object-contain" />
+                          {selectedImage.startsWith("data:application/pdf") ? (
+                            <div className="flex flex-col items-center text-slate-300">
+                              <FileText className="h-12 w-12 text-rose-400 mb-2" />
+                              <span className="text-xs font-bold">Documento PDF cargado</span>
+                            </div>
+                          ) : (
+                            <img src={selectedImage} alt="Receipt preview" className="max-h-full max-w-full object-contain" />
+                          )}
                           <button
                             onClick={() => {
                               setSelectedImage(null);
@@ -1079,13 +1086,12 @@ export default function App() {
                         >
                           <Upload className="h-8 w-8 mx-auto text-slate-400 mb-2" />
                           <span className="text-xs font-bold block mb-1">Escanear Tique o Factura</span>
-                          <span className="text-3xs text-slate-400">Arrastra imagen o clica para abrir cámara</span>
+                          <span className="text-3xs text-slate-400">Imagen (cámara/galería) o PDF — clic para elegir archivo</span>
                           <input
                             type="file"
                             ref={fileInputRef}
                             onChange={handleFileChange}
-                            accept="image/*"
-                            capture="environment" // direct maps to device camera
+                            accept="image/*,application/pdf"
                             className="hidden"
                           />
                         </div>
