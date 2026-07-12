@@ -31,7 +31,9 @@ import {
   QrCode,
   X,
   CreditCard,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ShieldAlert,
+  LogOut
 } from "lucide-react";
 import { AppState, Expense, Budget, BankConnection, Notification, SecuritySettings } from "./types";
 
@@ -41,6 +43,27 @@ export default function App() {
 
   // Core App State
   const [loading, setLoading] = useState<boolean>(true);
+  const [token, setToken] = useState<string | null>(localStorage.getItem("finterra_session_token"));
+  const [usernameInput, setUsernameInput] = useState<string>("");
+  const [passwordInput, setPasswordInput] = useState<string>("");
+  const [login2faRequired, setLogin2faRequired] = useState<boolean>(false);
+  const [login2faCode, setLogin2faCode] = useState<string>("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Authenticated fetch wrapper to automatically inject Authorization headers
+  const authFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = {
+      ...(init?.headers || {}),
+      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    };
+    const res = await fetch(input, { ...init, headers });
+    if (res.status === 401) {
+      setToken(null);
+      localStorage.removeItem("finterra_session_token");
+      showToast("Sesión expirada. Por favor, inicia sesión de nuevo.", "error");
+    }
+    return res;
+  };
   const [appData, setAppData] = useState<AppState>({
     expenses: [],
     budgets: [],
@@ -111,10 +134,14 @@ export default function App() {
   // Refs for local files uploads
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch initial data from server on mount
+  // Fetch initial data from server on mount or when token changes
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (token) {
+      fetchData();
+    } else {
+      setLoading(false);
+    }
+  }, [token]);
 
   // Update hashed E2E key simulation when passphrase changes
   useEffect(() => {
@@ -135,7 +162,7 @@ export default function App() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/data");
+      const res = await authFetch("/api/data");
       if (res.ok) {
         const data: AppState = await res.json();
         setAppData(data);
@@ -154,6 +181,85 @@ export default function App() {
     }
   };
 
+  // Secure Login handler supporting username, password and 2FA code step
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: usernameInput,
+          password: passwordInput,
+          code: login2faRequired ? login2faCode : undefined
+        })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        if (data.twoFactorRequired) {
+          setLogin2faRequired(true);
+          showToast("Autenticación de 2 Factores requerida", "info");
+        } else if (data.token) {
+          localStorage.setItem("finterra_session_token", data.token);
+          setToken(data.token);
+          setUsernameInput("");
+          setPasswordInput("");
+          setLogin2faCode("");
+          setLogin2faRequired(false);
+          showToast("Sesión iniciada con éxito", "success");
+        }
+      } else {
+        setLoginError(data.error || "Error al iniciar sesión");
+        showToast(data.error || "Fallo de autenticación", "error");
+      }
+    } catch (err) {
+      setLoginError("Error de conexión con el servidor");
+      showToast("Error de conexión", "error");
+    }
+  };
+
+  // Secure Logout handler
+  const handleLogout = () => {
+    setToken(null);
+    localStorage.removeItem("finterra_session_token");
+    setAppData({
+      expenses: [],
+      budgets: [],
+      bankConnections: [],
+      notifications: [],
+      securitySettings: {
+        biometricsEnabled: true,
+        encryptionEnabled: false,
+        twoFactorEnabled: false,
+        twoFactorSecret: "GEXP7X3J9S92FLL5",
+        encryptionKey: ""
+      }
+    });
+    showToast("Sesión cerrada", "info");
+  };
+
+  // Real 2FA disabling handler
+  const handleDisable2FA = async () => {
+    try {
+      const res = await authFetch("/api/security/disable-2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTwoFactorVerified(null);
+        setAppData({ ...appData, securitySettings: data.securitySettings });
+        showToast("Autenticación de Dos Factores desactivada", "info");
+      } else {
+        showToast("Error al desactivar 2FA", "error");
+      }
+    } catch (err) {
+      showToast("Error de red al desactivar 2FA", "error");
+    }
+  };
+
   const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -168,7 +274,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch("/api/expenses", {
+      const res = await authFetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -222,7 +328,7 @@ export default function App() {
   // Delete Expense Handler
   const handleDeleteExpense = async (id: string) => {
     try {
-      const res = await fetch(`/api/expenses/${id}`, { method: "DELETE" });
+      const res = await authFetch(`/api/expenses/${id}`, { method: "DELETE" });
       if (res.ok) {
         showToast("Gasto eliminado. Saldo reembolsado si correspondía", "info");
         await fetchData();
@@ -257,7 +363,7 @@ export default function App() {
 
     try {
       setScanning(true);
-      const res = await fetch("/api/scan-receipt", {
+      const res = await authFetch("/api/scan-receipt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: selectedImage })
@@ -295,7 +401,7 @@ export default function App() {
     try {
       setSyncingBankId(bankId);
       showToast("Conectando con la API del banco de forma segura...", "info");
-      const res = await fetch(`/api/banks/sync/${bankId}`, { method: "POST" });
+      const res = await authFetch(`/api/banks/sync/${bankId}`, { method: "POST" });
       
       if (res.ok) {
         // Wait 2 seconds for server timeout simulator to finish
@@ -318,7 +424,7 @@ export default function App() {
   const handleLinkBank = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/banks", {
+      const res = await authFetch("/api/banks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -344,7 +450,7 @@ export default function App() {
   // Unlink Bank Account via real API
   const handleUnlinkBank = async (id: string) => {
     try {
-      const res = await fetch(`/api/banks/${id}`, { method: "DELETE" });
+      const res = await authFetch(`/api/banks/${id}`, { method: "DELETE" });
       if (res.ok) {
         showToast("Cuenta bancaria desvinculada correctamente", "info");
         await fetchData();
@@ -360,7 +466,7 @@ export default function App() {
   const handleSaveBudgetLimit = async (category: string) => {
     if (!editingBudgetLimit) return;
     try {
-      const res = await fetch("/api/budgets", {
+      const res = await authFetch("/api/budgets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -384,7 +490,7 @@ export default function App() {
   // Clear/Read Notifications
   const handleMarkNotificationRead = async (id: string) => {
     try {
-      await fetch(`/api/notifications/read/${id}`, { method: "POST" });
+      await authFetch(`/api/notifications/read/${id}`, { method: "POST" });
       await fetchData();
     } catch (err) {
       console.error(err);
@@ -393,7 +499,7 @@ export default function App() {
 
   const handleClearNotifications = async () => {
     try {
-      await fetch("/api/notifications/clear", { method: "POST" });
+      await authFetch("/api/notifications/clear", { method: "POST" });
       await fetchData();
       showToast("Notificaciones archivadas", "info");
     } catch (err) {
@@ -409,7 +515,7 @@ export default function App() {
       encryptionKey: enabled ? e2eHashedKey : ""
     };
     try {
-      const res = await fetch("/api/security", {
+      const res = await authFetch("/api/security", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedSettings)
@@ -435,7 +541,7 @@ export default function App() {
       biometricsEnabled: enabled
     };
     try {
-      const res = await fetch("/api/security", {
+      const res = await authFetch("/api/security", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedSettings)
@@ -454,32 +560,37 @@ export default function App() {
     }
   };
 
-  // Simulated 2FA validation
-  const handleVerify2FA = () => {
-    if (twoFactorInput === "123456" || twoFactorInput.length === 6) {
-      setTwoFactorVerified(true);
-      const updatedSettings = {
-        ...appData.securitySettings,
-        twoFactorEnabled: true
-      };
-      fetch("/api/security", {
+  // Real 2FA verification using Google Authenticator code
+  const handleVerify2FA = async () => {
+    if (!twoFactorInput || twoFactorInput.length !== 6) {
+      showToast("Por favor ingresa un código de 6 dígitos", "error");
+      return;
+    }
+    try {
+      const res = await authFetch("/api/security/verify-2fa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedSettings)
-      }).then(() => {
-        setAppData({ ...appData, securitySettings: updatedSettings });
-        showToast("¡Autenticación de Dos Factores (2FA) configurada con éxito!", "success");
+        body: JSON.stringify({ code: twoFactorInput })
       });
-    } else {
-      setTwoFactorVerified(false);
-      showToast("Código de verificación incorrecto. Intenta con un token de 6 dígitos.", "error");
+      const data = await res.json();
+      if (res.ok) {
+        setTwoFactorVerified(true);
+        setAppData({ ...appData, securitySettings: data.securitySettings });
+        setTwoFactorInput("");
+        showToast("¡Autenticación de Dos Factores (2FA) configurada con éxito!", "success");
+      } else {
+        setTwoFactorVerified(false);
+        showToast(data.error || "Código 2FA incorrecto. Intenta de nuevo.", "error");
+      }
+    } catch (err) {
+      showToast("Error al verificar 2FA", "error");
     }
   };
 
   // Simulate report export download (CSV/HTML)
   const handleExportData = async (format: "csv" | "pdf" | "excel") => {
     try {
-      const res = await fetch("/api/export", {
+      const res = await authFetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ format })
@@ -508,7 +619,7 @@ export default function App() {
   const handleSendEmailReport = async () => {
     try {
       showToast("Generando reporte y conectando con servidor de correo...", "info");
-      const res = await fetch("/api/export", {
+      const res = await authFetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -546,6 +657,104 @@ export default function App() {
   });
 
   const unreadNotificationCount = appData.notifications.filter(n => !n.read).length;
+
+  if (!token) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-800"} font-sans transition-colors duration-300`}>
+        <div className="w-full max-w-md p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-3xl relative overflow-hidden">
+          
+          {/* Decorative glowing gradient sphere */}
+          <div className="absolute -top-24 -left-24 w-48 h-48 rounded-full bg-emerald-500/10 blur-3xl"></div>
+          <div className="absolute -bottom-24 -right-24 w-48 h-48 rounded-full bg-emerald-500/10 blur-3xl"></div>
+
+          <div className="text-center mb-8">
+            <div className="inline-flex p-3.5 bg-emerald-500 text-slate-950 rounded-2xl shadow-lg mb-4">
+              <Wallet className="h-7 w-7" />
+            </div>
+            <h1 className="text-2xl font-extrabold tracking-tight dark:text-white">Finterra</h1>
+            <p className="text-xs text-slate-400 mt-1">Gestor de Gastos Inteligente</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-5">
+            {!login2faRequired ? (
+              <>
+                <div>
+                  <label className="text-2xs font-bold text-slate-400 block mb-1.5 uppercase tracking-wider font-semibold">Usuario</label>
+                  <input
+                    type="text"
+                    value={usernameInput}
+                    onChange={e => setUsernameInput(e.target.value)}
+                    placeholder="luketas"
+                    className="w-full px-4 py-3 rounded-2xl border dark:border-slate-800 bg-transparent text-xs focus:outline-none focus:border-emerald-500 text-slate-800 dark:text-slate-100"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-2xs font-bold text-slate-400 block mb-1.5 uppercase tracking-wider font-semibold">Contraseña</label>
+                  <input
+                    type="password"
+                    value={passwordInput}
+                    onChange={e => setPasswordInput(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-3 rounded-2xl border dark:border-slate-800 bg-transparent text-xs focus:outline-none focus:border-emerald-500 text-slate-800 dark:text-slate-100"
+                    required
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-center p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/10 mb-2">
+                  <ShieldAlert className="h-6 w-6 text-emerald-400 mx-auto mb-2 animate-bounce" />
+                  <h3 className="text-xs font-bold dark:text-white">Verificación de 2 Factores</h3>
+                  <p className="text-3xs text-slate-400 mt-1">Ingresa el código temporal de 6 dígitos de tu app de autenticación.</p>
+                </div>
+                <div>
+                  <label className="text-2xs font-bold text-slate-400 block mb-1.5 uppercase tracking-wider font-semibold">Código 2FA</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={login2faCode}
+                    onChange={e => setLogin2faCode(e.target.value)}
+                    placeholder="Ej. 123456"
+                    className="w-full px-4 py-3 rounded-2xl border dark:border-slate-800 bg-transparent text-xs focus:outline-none focus:border-emerald-500 text-center font-mono tracking-widest font-bold text-slate-800 dark:text-slate-100"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            {loginError && (
+              <p className="text-xs text-rose-500 font-semibold text-center bg-rose-500/5 p-2.5 rounded-xl border border-rose-500/10">
+                {loginError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-2xl transition-all duration-200 cursor-pointer shadow-lg hover:shadow-emerald-500/25 flex items-center justify-center space-x-1.5 text-xs"
+            >
+              <span>{login2faRequired ? "Verificar y Acceder" : "Iniciar Sesión"}</span>
+            </button>
+
+            {login2faRequired && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLogin2faRequired(false);
+                  setLogin2faCode("");
+                  setLoginError(null);
+                }}
+                className="w-full text-center text-xs text-slate-400 hover:text-slate-200 cursor-pointer mt-2"
+              >
+                Volver a usuario/contraseña
+              </button>
+            )}
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="app-root" className={`min-h-screen ${darkMode ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-800"} font-sans transition-colors duration-300`}>
@@ -606,6 +815,15 @@ export default function App() {
               className="p-2.5 rounded-2xl dark:bg-slate-900 bg-slate-100 border dark:border-slate-800 border-slate-200 hover:opacity-80 transition cursor-pointer"
             >
               {darkMode ? <Sun className="h-5 w-5 text-amber-400" /> : <Moon className="h-5 w-5 text-slate-600" />}
+            </button>
+
+            {/* Log Out Button */}
+            <button
+              onClick={handleLogout}
+              className="p-2.5 rounded-2xl dark:bg-rose-950/20 bg-rose-50 border dark:border-rose-900/30 border-rose-200 hover:opacity-80 transition cursor-pointer text-rose-500 dark:text-rose-400"
+              title="Cerrar Sesión"
+            >
+              <LogOut className="h-5 w-5" />
             </button>
 
             {/* Notifications Button */}
@@ -1579,51 +1797,74 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 2. Google Authenticator 2FA simulator */}
+                {/* 2. Google Authenticator 2FA */}
                 <div className="p-6 rounded-3xl dark:bg-slate-900 bg-white border border-slate-200 dark:border-slate-800 shadow-md">
                   <h3 className="text-sm font-bold mb-3">Autenticación de Dos Factores (2FA)</h3>
-                  <p className="text-xs text-slate-400 mb-6">
-                    Asegura tu cuenta vinculando un autenticador de contraseñas de un solo uso (TOTP) como Google Authenticator o Authy.
-                  </p>
-
-                  <div className="flex flex-col md:flex-row items-center gap-6">
-                    <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-center justify-center">
-                      <QrCode className="h-32 w-32 text-slate-900" />
-                    </div>
-
-                    <div className="flex-1 space-y-4">
-                      <div>
-                        <span className="text-2xs font-bold text-slate-400 uppercase block mb-1">Clave de vinculación manual</span>
-                        <span className="text-xs font-mono font-bold dark:text-emerald-400 text-emerald-600 block">{appData.securitySettings.twoFactorSecret}</span>
-                      </div>
-
-                      <div>
-                        <label className="text-2xs font-bold text-slate-400 uppercase block mb-1">Código de Verificación temporal</label>
-                        <div className="flex space-x-2">
-                          <input
-                            type="text"
-                            maxLength={6}
-                            placeholder="Ej. 123456"
-                            value={twoFactorInput}
-                            onChange={e => setTwoFactorInput(e.target.value)}
-                            className="px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-transparent text-xs focus:outline-none focus:border-emerald-500 font-mono tracking-widest font-bold w-36"
-                          />
-                          <button
-                            onClick={handleVerify2FA}
-                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer"
-                          >
-                            Verificar y Activar
-                          </button>
+                  
+                  {appData.securitySettings.twoFactorEnabled ? (
+                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                          <ShieldCheck className="h-6 w-6 animate-pulse" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold block dark:text-white">Estado: Activo</span>
+                          <span className="text-3xs text-slate-400">Tu cuenta está protegida con verificación en dos pasos mediante TOTP.</span>
                         </div>
                       </div>
-
-                      {twoFactorVerified !== null && (
-                        <div className={`text-xs font-bold ${twoFactorVerified ? "text-emerald-400" : "text-rose-500"}`}>
-                          {twoFactorVerified ? "✓ ¡2FA Verificado y Activo!" : "✗ Código de token incorrecto"}
-                        </div>
-                      )}
+                      <button
+                        onClick={handleDisable2FA}
+                        className="px-4 py-2 bg-rose-50/15 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 text-xs font-bold rounded-xl transition cursor-pointer border border-rose-500/20"
+                      >
+                        Desactivar 2FA
+                      </button>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs text-slate-400 mb-6">
+                        Asegura tu cuenta vinculando un autenticador de contraseñas de un solo uso (TOTP) como Google Authenticator o Authy.
+                      </p>
+
+                      <div className="flex flex-col md:flex-row items-center gap-6">
+                        <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-center justify-center">
+                          <QrCode className="h-32 w-32 text-slate-900" />
+                        </div>
+
+                        <div className="flex-1 space-y-4">
+                          <div>
+                            <span className="text-2xs font-bold text-slate-400 uppercase block mb-1">Clave de vinculación manual</span>
+                            <span className="text-xs font-mono font-bold dark:text-emerald-400 text-emerald-600 block">{appData.securitySettings.twoFactorSecret}</span>
+                          </div>
+
+                          <div>
+                            <label className="text-2xs font-bold text-slate-400 uppercase block mb-1">Código de Verificación temporal</label>
+                            <div className="flex space-x-2">
+                              <input
+                                type="text"
+                                maxLength={6}
+                                placeholder="Ej. 123456"
+                                value={twoFactorInput}
+                                onChange={e => setTwoFactorInput(e.target.value)}
+                                className="px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-transparent text-xs focus:outline-none focus:border-emerald-500 font-mono tracking-widest font-bold w-36"
+                              />
+                              <button
+                                onClick={handleVerify2FA}
+                                className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer"
+                              >
+                                Verificar y Activar
+                              </button>
+                            </div>
+                          </div>
+
+                          {twoFactorVerified !== null && (
+                            <div className={`text-xs font-bold ${twoFactorVerified ? "text-emerald-400" : "text-rose-500"}`}>
+                              {twoFactorVerified ? "✓ ¡2FA Verificado y Activo!" : "✗ Código de token incorrecto"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

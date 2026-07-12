@@ -4,6 +4,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import crypto from "crypto";
 import { Expense, Budget, BankConnection, Notification, SecuritySettings, AppState } from "./src/types";
 import mongoose from "mongoose";
 import {
@@ -262,6 +263,73 @@ const seedDatabase = async () => {
   }
 };
 
+// Authentication and TOTP Session helpers
+const SESSION_SECRET = process.env.JWT_SECRET || "finterra-secure-session-key-2026";
+
+const getExpectedToken = () => {
+  return crypto.createHmac("sha256", SESSION_SECRET).update("luketas-Internet87+").digest("hex");
+};
+
+// Authentication Middleware to protect routes
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== `Bearer ${getExpectedToken()}`) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+  next();
+};
+
+// Base32 decoder to buffer for TOTP secrets
+function base32ToBuf(base32: string): Buffer {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (let i = 0; i < base32.length; i++) {
+    const val = alphabet.indexOf(base32[i].toUpperCase());
+    if (val >= 0) bits += val.toString(2).padStart(5, "0");
+  }
+  const bytes = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    const byte = bits.substring(i, i + 8);
+    if (byte.length === 8) bytes.push(parseInt(byte, 2));
+  }
+  return Buffer.from(bytes);
+}
+
+// Verify Google Authenticator TOTP token
+function verifyTOTP(secret: string, code: string): boolean {
+  try {
+    const key = base32ToBuf(secret);
+    const epoch = Math.round(Date.now() / 1000);
+    const timeStep = Math.floor(epoch / 30);
+
+    // Validate current time step and adjacent steps (handles clock drift)
+    for (let i = -1; i <= 1; i++) {
+      const step = timeStep + i;
+      const buffer = Buffer.alloc(8);
+      buffer.writeUInt32BE(Math.floor(step / 0x100000000), 0);
+      buffer.writeUInt32BE(step % 0x100000000, 4);
+
+      const hmac = crypto.createHmac("sha1", key);
+      hmac.update(buffer);
+      const hmacResult = hmac.digest();
+
+      const offset = hmacResult[hmacResult.length - 1] & 0xf;
+      const binary = ((hmacResult[offset] & 0x7f) << 24) |
+                     ((hmacResult[offset + 1] & 0xff) << 16) |
+                     ((hmacResult[offset + 2] & 0xff) << 8) |
+                     (hmacResult[offset + 3] & 0xff);
+
+      const otp = (binary % 1000000).toString().padStart(6, "0");
+      if (otp === code) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error("Error verifying TOTP:", err);
+  }
+  return false;
+}
+
 // Categorization helper
 function autoClassifyExpense(description: string): string {
   const desc = description.toLowerCase();
@@ -342,8 +410,83 @@ async function checkBudgetsAndNotifyDB(expense: any): Promise<string[]> {
 // REST API ENDPOINTS
 // ==========================================
 
+// Login endpoint (Public)
+app.post("/api/login", async (req, res) => {
+  try {
+    await connectDB();
+    const { username, password, code } = req.body;
+    
+    if (username !== "luketas" || password !== "Internet87+") {
+      return res.status(401).json({ success: false, error: "Usuario o contraseña incorrectos" });
+    }
+    
+    let securitySettings = await SecuritySettingsModel.findOne();
+    if (!securitySettings) {
+      securitySettings = await SecuritySettingsModel.create(defaultDb.securitySettings);
+    }
+    
+    if (securitySettings.twoFactorEnabled) {
+      if (!code) {
+        return res.json({ success: true, twoFactorRequired: true });
+      }
+      const verified = verifyTOTP(securitySettings.twoFactorSecret, code);
+      if (!verified) {
+        return res.status(401).json({ success: false, error: "Código 2FA incorrecto o expirado" });
+      }
+    }
+    
+    res.json({ success: true, token: getExpectedToken() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Verify and enable 2FA
+app.post("/api/security/verify-2fa", authenticateToken, async (req, res) => {
+  try {
+    await connectDB();
+    const { code } = req.body;
+    
+    let securitySettings = await SecuritySettingsModel.findOne();
+    if (!securitySettings) {
+      securitySettings = await SecuritySettingsModel.create(defaultDb.securitySettings);
+    }
+    
+    const verified = verifyTOTP(securitySettings.twoFactorSecret, code);
+    if (!verified) {
+      return res.status(400).json({ success: false, error: "Código de verificación incorrecto" });
+    }
+    
+    securitySettings.twoFactorEnabled = true;
+    await securitySettings.save();
+    
+    res.json({ success: true, securitySettings });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Disable 2FA
+app.post("/api/security/disable-2fa", authenticateToken, async (req, res) => {
+  try {
+    await connectDB();
+    
+    let securitySettings = await SecuritySettingsModel.findOne();
+    if (!securitySettings) {
+      securitySettings = await SecuritySettingsModel.create(defaultDb.securitySettings);
+    }
+    
+    securitySettings.twoFactorEnabled = false;
+    await securitySettings.save();
+    
+    res.json({ success: true, securitySettings });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Get all data
-app.get("/api/data", async (req, res) => {
+app.get("/api/data", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     await seedDatabase();
@@ -370,7 +513,7 @@ app.get("/api/data", async (req, res) => {
 });
 
 // Add an expense (or edit if ID exists)
-app.post("/api/expenses", async (req, res) => {
+app.post("/api/expenses", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     const rawExpense = req.body;
@@ -445,7 +588,7 @@ app.post("/api/expenses", async (req, res) => {
 });
 
 // Delete an expense
-app.delete("/api/expenses/:id", async (req, res) => {
+app.delete("/api/expenses/:id", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     const id = req.params.id;
@@ -496,7 +639,7 @@ app.delete("/api/expenses/:id", async (req, res) => {
 });
 
 // Update budgets limits
-app.post("/api/budgets", async (req, res) => {
+app.post("/api/budgets", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     const { category, limit, month } = req.body;
@@ -574,7 +717,7 @@ app.post("/api/budgets", async (req, res) => {
 });
 
 // Add a bank connection
-app.post("/api/banks", async (req, res) => {
+app.post("/api/banks", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     const newBank = req.body;
@@ -606,7 +749,7 @@ app.post("/api/banks", async (req, res) => {
 });
 
 // Delete a bank connection (unlink)
-app.delete("/api/banks/:id", async (req, res) => {
+app.delete("/api/banks/:id", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     const id = req.params.id;
@@ -624,7 +767,7 @@ app.delete("/api/banks/:id", async (req, res) => {
 });
 
 // Sync bank connection simulator (Vercel-compatible inline execution)
-app.post("/api/banks/sync/:id", async (req, res) => {
+app.post("/api/banks/sync/:id", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     const id = req.params.id;
@@ -718,7 +861,7 @@ app.post("/api/banks/sync/:id", async (req, res) => {
 });
 
 // Update security settings (encryption keys, 2FA codes, face ID)
-app.post("/api/security", async (req, res) => {
+app.post("/api/security", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     let securitySettings = await SecuritySettingsModel.findOne();
@@ -737,7 +880,7 @@ app.post("/api/security", async (req, res) => {
 });
 
 // Clear or read notifications
-app.post("/api/notifications/read/:id", async (req, res) => {
+app.post("/api/notifications/read/:id", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     await NotificationModel.updateOne({ id: req.params.id }, { read: true });
@@ -747,7 +890,7 @@ app.post("/api/notifications/read/:id", async (req, res) => {
   }
 });
 
-app.post("/api/notifications/clear", async (req, res) => {
+app.post("/api/notifications/clear", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     await NotificationModel.deleteMany({});
@@ -758,7 +901,7 @@ app.post("/api/notifications/clear", async (req, res) => {
 });
 
 // Receipt Scanning endpoint via Gemini API (OCR)
-app.post("/api/scan-receipt", async (req, res) => {
+app.post("/api/scan-receipt", authenticateToken, async (req, res) => {
   const { image } = req.body; // Expect base64 encoded image string (e.g., data:image/png;base64,xxxx)
 
   if (!image) {
@@ -891,7 +1034,7 @@ app.post("/api/scan-receipt", async (req, res) => {
 });
 
 // Export endpoints & periodic emails simulation
-app.post("/api/export", async (req, res) => {
+app.post("/api/export", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     const { format, email } = req.body;
