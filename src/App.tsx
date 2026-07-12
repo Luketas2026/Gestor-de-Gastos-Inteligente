@@ -768,9 +768,9 @@ export default function App() {
       
       {/* 1. BIOMETRIC LOCK SCREEN SIMULATOR */}
       {showBiometricScreen && appData.securitySettings.biometricsEnabled && (
-        <div id="biometric-overlay" className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900 bg-opacity-98 backdrop-blur-md">
+        <div id="biometric-overlay" className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/98 backdrop-blur-md">
           <div className="w-full max-w-md p-8 bg-slate-800 rounded-3xl border border-slate-700 shadow-2xl text-center flex flex-col items-center">
-            <div className="p-4 bg-emerald-500 bg-opacity-10 rounded-full mb-6 animate-pulse">
+            <div className="p-4 bg-emerald-500/10 rounded-full mb-6 animate-pulse">
               <Fingerprint className="h-16 w-16 text-emerald-400" />
             </div>
             <h2 className="text-2xl font-bold mb-2 text-white font-sans">Bloqueo Biométrico Activo</h2>
@@ -985,7 +985,7 @@ export default function App() {
                           <span className="text-2xs uppercase tracking-widest font-bold text-slate-400">Gasto Acumulado (Mes)</span>
                           <h2 className="text-3xl font-extrabold mt-1 text-rose-500">${totalMonthlySpent.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</h2>
                         </div>
-                        <div className="p-2 bg-rose-500 bg-opacity-10 text-rose-500 rounded-xl">
+                        <div className="p-2 bg-rose-500/10 text-rose-500 rounded-xl">
                           <TrendingUp className="h-5 w-5" />
                         </div>
                       </div>
@@ -1163,7 +1163,7 @@ export default function App() {
                               setSelectedImage(null);
                               setScanResult(null);
                             }}
-                            className="absolute top-2 right-2 p-1.5 bg-slate-900 bg-opacity-80 rounded-full text-slate-400 hover:text-white"
+                            className="absolute top-2 right-2 p-1.5 bg-slate-900/80 rounded-full text-slate-400 hover:text-white"
                           >
                             <X className="h-4 w-4" />
                           </button>
@@ -1208,7 +1208,7 @@ export default function App() {
                       )}
 
                       {scanResult && (
-                        <div className="p-4 rounded-2xl bg-emerald-500 bg-opacity-5 border border-emerald-500/20 space-y-2">
+                        <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-2">
                           <div className="flex justify-between items-center">
                             <span className="text-2xs font-extrabold uppercase text-emerald-400">Datos Extraídos de Forma Segura</span>
                             <span className="text-3xs font-mono px-2 py-0.5 rounded-full dark:bg-slate-800 bg-slate-100 dark:text-slate-300">Cifrado E2EE</span>
@@ -1995,7 +1995,7 @@ export default function App() {
                     {/* CSV/Excel Export */}
                     <div className="p-4 rounded-2xl dark:bg-slate-950/20 border dark:border-slate-800 flex flex-col justify-between">
                       <div>
-                        <div className="p-2.5 bg-amber-500 bg-opacity-10 text-amber-500 rounded-xl w-max mb-3">
+                        <div className="p-2.5 bg-amber-500/10 text-amber-500 rounded-xl w-max mb-3">
                           <FileSpreadsheet className="h-5 w-5" />
                         </div>
                         <h4 className="text-xs font-bold mb-1">Exportar Reporte Mensual (Excel/CSV)</h4>
@@ -2013,7 +2013,7 @@ export default function App() {
                     {/* PDF Document Print Report */}
                     <div className="p-4 rounded-2xl dark:bg-slate-950/20 border dark:border-slate-800 flex flex-col justify-between">
                       <div>
-                        <div className="p-2.5 bg-rose-500 bg-opacity-10 text-rose-500 rounded-xl w-max mb-3">
+                        <div className="p-2.5 bg-rose-500/10 text-rose-500 rounded-xl w-max mb-3">
                           <FileText className="h-5 w-5" />
                         </div>
                         <h4 className="text-xs font-bold mb-1">Descargar Reporte PDF</h4>
@@ -2031,7 +2031,7 @@ export default function App() {
                     {/* Email summary simulator (periódicamente) */}
                     <div className="p-4 rounded-2xl dark:bg-slate-950/20 border dark:border-slate-800 flex flex-col justify-between">
                       <div>
-                        <div className="p-2.5 bg-emerald-500 bg-opacity-10 text-emerald-400 rounded-xl w-max mb-3">
+                        <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl w-max mb-3">
                           <Mail className="h-5 w-5" />
                         </div>
                         <h4 className="text-xs font-bold mb-1">Informe Periódico por Correo</h4>
@@ -2057,7 +2057,7 @@ export default function App() {
       {/* G. LINK BANK MODAL DIALOG SIMULATOR                     */}
       {/* ======================================================== */}
       {showLinkBankModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900 bg-opacity-80 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-xs">
           <div className="w-full max-w-md p-6 bg-slate-850 dark:bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl text-slate-100">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-bold text-white flex items-center space-x-1.5">
@@ -2118,7 +2118,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="p-3 bg-emerald-500 bg-opacity-5 border border-emerald-500/15 rounded-xl text-[10px] text-slate-400 flex items-start space-x-2">
+              <div className="p-3 bg-emerald-500/5 border border-emerald-500/15 rounded-xl text-[10px] text-slate-400 flex items-start space-x-2">
                 <ShieldCheck className="h-4.5 w-4.5 text-emerald-400 mt-0.5 shrink-0" />
                 <span>
                   Validamos tu CBU/CVU con el algoritmo oficial del BCRA (dígito verificador módulo 10) y detectamos el banco automáticamente por su código de entidad.
@@ -2141,7 +2141,7 @@ export default function App() {
       {/* H. EMAIL REPORT PREVIEW MODAL SCREEN                     */}
       {/* ======================================================== */}
       {showEmailPreview?.open && (
-        <div className="fixed inset-0 z-55 flex items-center justify-center bg-slate-900 bg-opacity-80 backdrop-blur-xs p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-55 flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl text-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 bg-slate-100 border-b border-slate-200 flex justify-between items-center">
               <div>
