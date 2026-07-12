@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import crypto from "crypto";
-import { Expense, Budget, BankConnection, Notification, SecuritySettings, AppState } from "./src/types";
+import { Expense, Budget, BankConnection, Notification, SecuritySettings, AppState } from "./src/types.js";
 import mongoose from "mongoose";
 import {
   Expense as ExpenseModel,
@@ -13,7 +13,7 @@ import {
   BankConnection as BankConnectionModel,
   Notification as NotificationModel,
   SecuritySettings as SecuritySettingsModel
-} from "./src/db/models";
+} from "./src/db/models.js";
 
 dotenv.config();
 
