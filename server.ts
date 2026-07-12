@@ -230,10 +230,13 @@ const connectDB = async () => {
     if (!mongoURI) {
       throw new Error("MONGODB_URI environment variable is not defined.");
     }
-    await mongoose.connect(mongoURI);
+    await mongoose.connect(mongoURI, {
+      serverSelectionTimeoutMS: 5000
+    });
     console.log("Conectado exitosamente a MongoDB Atlas");
   } catch (err) {
     console.error("Error al conectar a MongoDB:", err);
+    throw err;
   }
 };
 
