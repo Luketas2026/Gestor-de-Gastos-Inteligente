@@ -84,6 +84,18 @@ export interface CbuValidationResult {
   error?: string;
 }
 
+// Chequeo de formato del alias (NO resuelve a un CBU real: eso requiere la
+// API de COELSA, a la que solo bancos/billeteras registradas tienen acceso).
+// Solo valida que tenga la forma habitual: 6-20 caracteres, minúsculas,
+// números y puntos, sin empezar/terminar en punto ni tener puntos seguidos.
+export function isValidAliasFormat(alias: string): boolean {
+  const value = (alias || "").trim().toLowerCase();
+  if (value.length < 6 || value.length > 20) return false;
+  if (!/^[a-z0-9.]+$/.test(value)) return false;
+  if (value.startsWith(".") || value.endsWith(".") || value.includes("..")) return false;
+  return true;
+}
+
 export function maskCBU(cbu: string): string {
   const digits = (cbu || "").replace(/\s|-/g, "");
   if (digits.length !== 22) return cbu;

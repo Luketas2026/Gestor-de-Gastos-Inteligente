@@ -40,7 +40,8 @@ const BankConnectionSchema = new mongoose.Schema({
   balance: { type: Number, required: true },
   lastSynced: { type: String, required: true },
   accountNumber: { type: String, required: true },
-  status: { 
+  alias: { type: String },
+  status: {
     type: String, 
     required: true, 
     enum: ["connected", "syncing", "error", "disconnected"], 

@@ -733,6 +733,7 @@ app.post("/api/banks", authenticateToken, async (req, res) => {
       balance: parseFloat(newBank.balance) || 0,
       lastSynced: new Date().toISOString().replace("T", " ").substring(0, 16),
       accountNumber: newBank.cbu || newBank.accountNumber,
+      alias: (newBank.alias || "").trim() || undefined,
       status: "connected"
     });
     

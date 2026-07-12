@@ -32,6 +32,7 @@ export interface BankConnection {
   balance: number;
   lastSynced: string;
   accountNumber: string;
+  alias?: string; // apodo opcional (no resuelve a CBU, solo etiqueta visual)
   status: "connected" | "syncing" | "error" | "disconnected";
 }
 

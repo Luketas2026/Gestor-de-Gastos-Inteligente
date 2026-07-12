@@ -36,7 +36,7 @@ import {
   LogOut
 } from "lucide-react";
 import { AppState, Expense, Budget, BankConnection, Notification, SecuritySettings } from "./types";
-import { validateCBU, maskCBU } from "./utils/cbu";
+import { validateCBU, maskCBU, isValidAliasFormat } from "./utils/cbu";
 
 export default function App() {
   // Theme State
@@ -116,6 +116,7 @@ export default function App() {
   const [showLinkBankModal, setShowLinkBankModal] = useState<boolean>(false);
   const [newBankForm, setNewBankForm] = useState({
     cbu: "",
+    alias: "",
     accountType: "Cuenta Corriente",
     balance: "1500"
   });
@@ -428,12 +429,18 @@ export default function App() {
       return;
     }
 
+    if (newBankForm.alias && !isValidAliasFormat(newBankForm.alias)) {
+      showToast("El alias debe tener entre 6 y 20 caracteres (minúsculas, números y puntos).", "error");
+      return;
+    }
+
     try {
       const res = await authFetch("/api/banks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cbu: newBankForm.cbu.replace(/\s|-/g, ""),
+          alias: newBankForm.alias.trim().toLowerCase() || undefined,
           accountType: newBankForm.accountType,
           balance: parseFloat(newBankForm.balance) || 0
         })
@@ -443,7 +450,7 @@ export default function App() {
         const result = await res.json();
         await fetchData();
         setShowLinkBankModal(false);
-        setNewBankForm({ cbu: "", accountType: "Cuenta Corriente", balance: "1500" });
+        setNewBankForm({ cbu: "", alias: "", accountType: "Cuenta Corriente", balance: "1500" });
         showToast(`¡Cuenta de ${result.bank?.bankName || cbuCheck.bankName} vinculada con éxito!`, "success");
       } else {
         const result = await res.json().catch(() => null);
@@ -1094,7 +1101,7 @@ export default function App() {
                         <div key={b.id} className="p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/20">
                           <div>
                             <span className="text-xs font-bold block">{b.bankName}</span>
-                            <span className="text-3xs text-slate-400 font-mono">{maskCBU(b.accountNumber)}</span>
+                            <span className="text-3xs text-slate-400 font-mono">{b.alias || maskCBU(b.accountNumber)}</span>
                           </div>
                           <div className="text-right">
                             <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">${b.balance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
@@ -1663,7 +1670,7 @@ export default function App() {
                               </svg>
                             </div>
                             
-                            <span className="text-xs font-mono tracking-widest text-white/90 font-bold">{maskCBU(b.accountNumber)}</span>
+                            <span className="text-xs font-mono tracking-widest text-white/90 font-bold">{b.alias || maskCBU(b.accountNumber)}</span>
                           </div>
 
                           {/* Bottom: Balance and Actions */}
@@ -2096,6 +2103,23 @@ export default function App() {
               </div>
 
               <div>
+                <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Alias (opcional)</label>
+                <input
+                  type="text"
+                  placeholder="mi.alias.cuenta"
+                  value={newBankForm.alias}
+                  onChange={e => setNewBankForm({ ...newBankForm, alias: e.target.value.toLowerCase().slice(0, 20) })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none font-mono"
+                />
+                {newBankForm.alias.length > 0 && !isValidAliasFormat(newBankForm.alias) && (
+                  <p className="mt-1.5 text-2xs text-rose-400">6-20 caracteres: minúsculas, números y puntos.</p>
+                )}
+                <p className="mt-1.5 text-2xs text-slate-500">
+                  Es solo un apodo para identificar la cuenta más fácil — no lo validamos contra tu banco.
+                </p>
+              </div>
+
+              <div>
                 <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Tipo de Cuenta</label>
                 <select
                   value={newBankForm.accountType}
@@ -2127,7 +2151,7 @@ export default function App() {
 
               <button
                 type="submit"
-                disabled={!validateCBU(newBankForm.cbu).valid}
+                disabled={!validateCBU(newBankForm.cbu).valid || (newBankForm.alias.length > 0 && !isValidAliasFormat(newBankForm.alias))}
                 className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer"
               >
                 Vincular y Cifrar Cuenta
