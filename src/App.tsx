@@ -1060,7 +1060,11 @@ export default function App() {
                         </div>
                       </div>
                       <div className="flex items-center space-x-3 bg-white dark:bg-slate-900 p-2 rounded-2xl border dark:border-slate-800 shadow-sm">
-                        <QrCode className="h-10 w-10 dark:text-white text-slate-800" />
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(window.location.origin)}`} 
+                          alt="Sincronización Móvil QR" 
+                          className="h-10 w-10" 
+                        />
                         <div className="text-2xs leading-tight">
                           <span className="font-bold block text-slate-700 dark:text-slate-300">Escanea en tu Móvil</span>
                           <span className="text-slate-400">Sincronización en la nube</span>
