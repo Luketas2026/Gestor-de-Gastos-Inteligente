@@ -215,7 +215,7 @@ const defaultDb: AppState = {
     biometricsEnabled: true,
     encryptionEnabled: false,
     twoFactorEnabled: false,
-    twoFactorSecret: "GEXP7X3J9S92FLL5",
+    twoFactorSecret: "GEZD4NBVGY3TQOJQ",
     encryptionKey: ""
   }
 };
@@ -250,7 +250,7 @@ const seedDatabase = async () => {
         biometricsEnabled: false,
         encryptionEnabled: false,
         twoFactorEnabled: false,
-        twoFactorSecret: "GEXP7X3J9S92FLL5",
+        twoFactorSecret: "GEZD4NBVGY3TQOJQ",
         encryptionKey: ""
       });
     }

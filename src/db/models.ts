@@ -67,7 +67,7 @@ const SecuritySettingsSchema = new mongoose.Schema({
   biometricsEnabled: { type: Boolean, required: true, default: true },
   encryptionEnabled: { type: Boolean, required: true, default: false },
   twoFactorEnabled: { type: Boolean, required: true, default: false },
-  twoFactorSecret: { type: String, required: true, default: "GEXP7X3J9S92FLL5" },
+  twoFactorSecret: { type: String, required: true, default: "GEZD4NBVGY3TQOJQ" },
   encryptionKey: { type: String, default: "" }
 });
 
