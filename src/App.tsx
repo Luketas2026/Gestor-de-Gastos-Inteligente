@@ -36,6 +36,7 @@ import {
   LogOut
 } from "lucide-react";
 import { AppState, Expense, Budget, BankConnection, Notification, SecuritySettings } from "./types";
+import { validateCBU, maskCBU } from "./utils/cbu";
 
 export default function App() {
   // Theme State
@@ -114,10 +115,9 @@ export default function App() {
   const [syncingBankId, setSyncingBankId] = useState<string | null>(null);
   const [showLinkBankModal, setShowLinkBankModal] = useState<boolean>(false);
   const [newBankForm, setNewBankForm] = useState({
-    bankName: "CaixaBank",
+    cbu: "",
     accountType: "Cuenta Corriente",
-    balance: "1500",
-    accountNumber: "ES45 2100 **** 7788"
+    balance: "1500"
   });
 
   // Security Simulator States
@@ -418,27 +418,36 @@ export default function App() {
     }
   };
 
-  // Link New Bank Account via real API
+  // Link New Bank Account via real API (validates real CBU/CVU checksum)
   const handleLinkBank = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const cbuCheck = validateCBU(newBankForm.cbu);
+    if (!cbuCheck.valid) {
+      showToast(cbuCheck.error || "CBU/CVU inválido", "error");
+      return;
+    }
+
     try {
       const res = await authFetch("/api/banks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bankName: newBankForm.bankName,
+          cbu: newBankForm.cbu.replace(/\s|-/g, ""),
           accountType: newBankForm.accountType,
-          balance: parseFloat(newBankForm.balance) || 1500,
-          accountNumber: newBankForm.accountNumber
+          balance: parseFloat(newBankForm.balance) || 0
         })
       });
-      
+
       if (res.ok) {
+        const result = await res.json();
         await fetchData();
         setShowLinkBankModal(false);
-        showToast(`¡Cuenta de ${newBankForm.bankName} vinculada con éxito y cifrada de extremo a extremo!`, "success");
+        setNewBankForm({ cbu: "", accountType: "Cuenta Corriente", balance: "1500" });
+        showToast(`¡Cuenta de ${result.bank?.bankName || cbuCheck.bankName} vinculada con éxito!`, "success");
       } else {
-        showToast("Error al vincular banco", "error");
+        const result = await res.json().catch(() => null);
+        showToast(result?.error || "Error al vincular banco", "error");
       }
     } catch (err) {
       showToast("Error de conexión al vincular banco", "error");
@@ -1085,7 +1094,7 @@ export default function App() {
                         <div key={b.id} className="p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/20">
                           <div>
                             <span className="text-xs font-bold block">{b.bankName}</span>
-                            <span className="text-3xs text-slate-400 font-mono">{b.accountNumber}</span>
+                            <span className="text-3xs text-slate-400 font-mono">{maskCBU(b.accountNumber)}</span>
                           </div>
                           <div className="text-right">
                             <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">${b.balance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
@@ -1654,7 +1663,7 @@ export default function App() {
                               </svg>
                             </div>
                             
-                            <span className="text-xs font-mono tracking-widest text-white/90 font-bold">{b.accountNumber}</span>
+                            <span className="text-xs font-mono tracking-widest text-white/90 font-bold">{maskCBU(b.accountNumber)}</span>
                           </div>
 
                           {/* Bottom: Balance and Actions */}
@@ -2062,19 +2071,28 @@ export default function App() {
 
             <form onSubmit={handleLinkBank} className="space-y-4">
               <div>
-                <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Selecciona Entidad Bancaria</label>
-                <select
-                  value={newBankForm.bankName}
-                  onChange={e => setNewBankForm({ ...newBankForm, bankName: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none"
-                >
-                  <option value="BBVA España">BBVA España</option>
-                  <option value="Banco Santander">Banco Santander</option>
-                  <option value="CaixaBank">CaixaBank</option>
-                  <option value="Revolut">Revolut</option>
-                  <option value="Banco Sabadell">Banco Sabadell</option>
-                  <option value="ING Direct">ING Direct</option>
-                </select>
+                <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">CBU / CVU (22 dígitos)</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0000000000000000000000"
+                  value={newBankForm.cbu}
+                  onChange={e => setNewBankForm({ ...newBankForm, cbu: e.target.value.replace(/[^\d]/g, "").slice(0, 22) })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none font-mono tracking-wider"
+                />
+                {newBankForm.cbu.length > 0 && (() => {
+                  const check = validateCBU(newBankForm.cbu);
+                  return check.valid ? (
+                    <p className="mt-1.5 text-2xs text-emerald-400 flex items-center space-x-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>Banco detectado: {check.bankName}</span>
+                    </p>
+                  ) : newBankForm.cbu.length === 22 ? (
+                    <p className="mt-1.5 text-2xs text-rose-400">{check.error}</p>
+                  ) : (
+                    <p className="mt-1.5 text-2xs text-slate-500">{newBankForm.cbu.length}/22 dígitos</p>
+                  );
+                })()}
               </div>
 
               <div>
@@ -2090,37 +2108,27 @@ export default function App() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Saldo de apertura ($)</label>
-                  <input
-                    type="number"
-                    value={newBankForm.balance}
-                    onChange={e => setNewBankForm({ ...newBankForm, balance: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Número de Cuenta</label>
-                  <input
-                    type="text"
-                    value={newBankForm.accountNumber}
-                    onChange={e => setNewBankForm({ ...newBankForm, accountNumber: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none font-mono"
-                  />
-                </div>
+              <div>
+                <label className="text-3xs font-bold text-slate-400 uppercase block mb-1">Saldo de apertura ($)</label>
+                <input
+                  type="number"
+                  value={newBankForm.balance}
+                  onChange={e => setNewBankForm({ ...newBankForm, balance: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs focus:outline-none font-bold"
+                />
               </div>
 
               <div className="p-3 bg-emerald-500 bg-opacity-5 border border-emerald-500/15 rounded-xl text-[10px] text-slate-400 flex items-start space-x-2">
                 <ShieldCheck className="h-4.5 w-4.5 text-emerald-400 mt-0.5 shrink-0" />
                 <span>
-                  Al hacer clic, autorizas a Finterra a conectar de forma segura mediante protocolo de banca abierta cifrado de extremo a extremo (Open Banking PSD2).
+                  Validamos tu CBU/CVU con el algoritmo oficial del BCRA (dígito verificador módulo 10) y detectamos el banco automáticamente por su código de entidad.
                 </span>
               </div>
 
               <button
                 type="submit"
-                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer"
+                disabled={!validateCBU(newBankForm.cbu).valid}
+                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 text-xs font-bold rounded-xl transition cursor-pointer"
               >
                 Vincular y Cifrar Cuenta
               </button>

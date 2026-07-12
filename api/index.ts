@@ -13,6 +13,7 @@ import {
   Notification as NotificationModel,
   SecuritySettings as SecuritySettingsModel
 } from "../src/db/models.js";
+import { validateCBU } from "../src/utils/cbu.js";
 
 dotenv.config();
 
@@ -719,14 +720,19 @@ app.post("/api/banks", authenticateToken, async (req, res) => {
   try {
     await connectDB();
     const newBank = req.body;
-    
+
+    const cbuValidation = validateCBU(newBank.cbu || newBank.accountNumber || "");
+    if (!cbuValidation.valid) {
+      return res.status(400).json({ success: false, error: cbuValidation.error });
+    }
+
     const bank = await BankConnectionModel.create({
       id: newBank.id || `bank-${Date.now()}`,
-      bankName: newBank.bankName || "Banco",
+      bankName: cbuValidation.bankName,
       accountType: newBank.accountType || "Cuenta Corriente",
       balance: parseFloat(newBank.balance) || 0,
       lastSynced: new Date().toISOString().replace("T", " ").substring(0, 16),
-      accountNumber: newBank.accountNumber || "ES00 0000 ****",
+      accountNumber: newBank.cbu || newBank.accountNumber,
       status: "connected"
     });
     
