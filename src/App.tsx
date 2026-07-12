@@ -1827,7 +1827,11 @@ export default function App() {
 
                       <div className="flex flex-col md:flex-row items-center gap-6">
                         <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-center justify-center">
-                          <QrCode className="h-32 w-32 text-slate-900" />
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=otpauth%3A%2F%2Ftotp%2FFinterra%3Aluketas%3Fsecret%3D${appData.securitySettings.twoFactorSecret}%26issuer%3DFinterra`} 
+                            alt="Código QR 2FA" 
+                            className="h-32 w-32" 
+                          />
                         </div>
 
                         <div className="flex-1 space-y-4">
