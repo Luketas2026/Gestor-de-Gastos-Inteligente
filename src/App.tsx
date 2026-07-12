@@ -283,7 +283,8 @@ export default function App() {
           description: expenseForm.description,
           date: expenseForm.date,
           paymentMethod: expenseForm.paymentMethod,
-          bankAccountId: expenseForm.bankAccountId || undefined
+          bankAccountId: expenseForm.bankAccountId || undefined,
+          items: scanResult?.items || undefined
         })
       });
 
@@ -369,25 +370,22 @@ export default function App() {
         body: JSON.stringify({ image: selectedImage })
       });
 
-      if (res.ok) {
-        const result = await res.json();
-        if (result.success) {
-          setScanResult(result.data);
-          // Autofill form
-          setExpenseForm({
-            amount: result.data.amount.toString(),
-            category: result.data.category,
-            description: result.data.vendor,
-            date: result.data.date,
-            paymentMethod: "Tarjeta de Crédito",
-            bankAccountId: appData.bankConnections[0]?.id || ""
-          });
-          showToast(`OCR finalizado por ${result.method === "gemini_ai_ocr" ? "Gemini 3.5" : "Simulador OCR"}. Datos pre-completados.`, "success");
-        } else {
-          showToast("No se pudo extraer información del recibo", "error");
-        }
+      const result = await res.json().catch(() => null);
+
+      if (res.ok && result?.success) {
+        setScanResult(result.data);
+        // Autofill form
+        setExpenseForm({
+          amount: result.data.amount.toString(),
+          category: result.data.category,
+          description: result.data.vendor,
+          date: result.data.date,
+          paymentMethod: "Tarjeta de Crédito",
+          bankAccountId: appData.bankConnections[0]?.id || ""
+        });
+        showToast(`OCR finalizado por ${result.method === "gemini_ai_ocr" ? "Gemini AI" : "Simulador OCR"}. Datos pre-completados.`, "success");
       } else {
-        showToast("Error en el servidor OCR de recibos", "error");
+        showToast(result?.error || "Error en el servidor OCR de recibos", "error");
       }
     } catch (err) {
       showToast("Fallo al conectar con el motor OCR", "error");

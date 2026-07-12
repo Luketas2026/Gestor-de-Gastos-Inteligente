@@ -543,7 +543,8 @@ app.post("/api/expenses", authenticateToken, async (req, res) => {
         paymentMethod: rawExpense.paymentMethod || "Tarjeta",
         isAutoClassified: !rawExpense.category,
         bankAccountId: rawExpense.bankAccountId,
-        isSuspicious: (parseFloat(rawExpense.amount) || 0) > 500
+        isSuspicious: (parseFloat(rawExpense.amount) || 0) > 500,
+        items: Array.isArray(rawExpense.items) ? rawExpense.items : undefined
       });
       
       // Deduct from bank connection if bankAccountId is provided
@@ -981,7 +982,7 @@ app.post("/api/scan-receipt", authenticateToken, async (req, res) => {
         });
       }
     } catch (err: any) {
-      console.error("Gemini OCR error, falling back to simulated parser:", err);
+      console.error("Gemini OCR error, falling back to simulated parser:", err?.message || err);
       // Fall through to simulation if API call fails
     }
   }
