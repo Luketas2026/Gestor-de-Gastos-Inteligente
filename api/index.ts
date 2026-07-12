@@ -244,24 +244,19 @@ let isSeeded = false;
 const seedDatabase = async () => {
   if (isSeeded) return;
   try {
-    const expenseCount = await ExpenseModel.countDocuments();
-    const budgetCount = await BudgetModel.countDocuments();
-    const bankCount = await BankConnectionModel.countDocuments();
-    const notificationCount = await NotificationModel.countDocuments();
-    const securityCount = await SecuritySettingsModel.countDocuments();
-
-    if (expenseCount === 0 && budgetCount === 0 && bankCount === 0 && notificationCount === 0 && securityCount === 0) {
-      console.log("Seeding default database values to MongoDB...");
-      await ExpenseModel.insertMany(defaultDb.expenses);
-      await BudgetModel.insertMany(defaultDb.budgets);
-      await BankConnectionModel.insertMany(defaultDb.bankConnections);
-      await NotificationModel.insertMany(defaultDb.notifications);
-      await SecuritySettingsModel.create(defaultDb.securitySettings);
-      console.log("Database seeded successfully.");
+    let securitySettings = await SecuritySettingsModel.findOne();
+    if (!securitySettings) {
+      await SecuritySettingsModel.create({
+        biometricsEnabled: false,
+        encryptionEnabled: false,
+        twoFactorEnabled: false,
+        twoFactorSecret: "GEXP7X3J9S92FLL5",
+        encryptionKey: ""
+      });
     }
     isSeeded = true;
   } catch (err) {
-    console.error("Error seeding database:", err);
+    console.error("Error seeding default security settings:", err);
   }
 };
 
@@ -304,8 +299,8 @@ function verifyTOTP(secret: string, code: string): boolean {
     const epoch = Math.round(Date.now() / 1000);
     const timeStep = Math.floor(epoch / 30);
 
-    // Validate current time step and adjacent steps (handles clock drift)
-    for (let i = -1; i <= 1; i++) {
+    // Validate current time step and adjacent steps (handles clock drift of up to 2 minutes)
+    for (let i = -4; i <= 4; i++) {
       const step = timeStep + i;
       const buffer = Buffer.alloc(8);
       buffer.writeUInt32BE(Math.floor(step / 0x100000000), 0);
