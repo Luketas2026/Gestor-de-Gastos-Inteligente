@@ -1285,15 +1285,15 @@ export default function App() {
                           <select
                             value={expenseForm.category}
                             onChange={e => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                            className="w-full px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500"
+                            className="w-full px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500 text-slate-800 dark:text-slate-100"
                           >
-                            <option value="">Clasificación Auto (Por IA)</option>
-                            <option value="Alimentación">Alimentación</option>
-                            <option value="Transporte">Transporte</option>
-                            <option value="Servicios">Servicios</option>
-                            <option value="Entretenimiento">Entretenimiento</option>
-                            <option value="Salud">Salud</option>
-                            <option value="Otros">Otros</option>
+                            <option value="" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Clasificación Auto (Por IA)</option>
+                            <option value="Alimentación" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Alimentación</option>
+                            <option value="Transporte" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Transporte</option>
+                            <option value="Servicios" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Servicios</option>
+                            <option value="Entretenimiento" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Entretenimiento</option>
+                            <option value="Salud" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Salud</option>
+                            <option value="Otros" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Otros</option>
                           </select>
                         </div>
                         <div>
@@ -1301,12 +1301,12 @@ export default function App() {
                           <select
                             value={expenseForm.paymentMethod}
                             onChange={e => setExpenseForm({ ...expenseForm, paymentMethod: e.target.value })}
-                            className="w-full px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500"
+                            className="w-full px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500 text-slate-800 dark:text-slate-100"
                           >
-                            <option value="Tarjeta de Crédito">Tarjeta de Crédito</option>
-                            <option value="Tarjeta de Débito">Tarjeta de Débito</option>
-                            <option value="Transferencia">Transferencia</option>
-                            <option value="Efectivo">Efectivo</option>
+                            <option value="Tarjeta de Crédito" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Tarjeta de Crédito</option>
+                            <option value="Tarjeta de Débito" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Tarjeta de Débito</option>
+                            <option value="Transferencia" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Transferencia</option>
+                            <option value="Efectivo" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Efectivo</option>
                           </select>
                         </div>
                       </div>
@@ -1316,11 +1316,11 @@ export default function App() {
                         <select
                           value={expenseForm.bankAccountId}
                           onChange={e => setExpenseForm({ ...expenseForm, bankAccountId: e.target.value })}
-                          className="w-full px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500"
+                          className="w-full px-4 py-2.5 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs focus:outline-none focus:border-emerald-500 text-slate-800 dark:text-slate-100"
                         >
-                          <option value="">Ninguna (Gasto Externo)</option>
+                          <option value="" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Ninguna (Gasto Externo)</option>
                           {appData.bankConnections.map(b => (
-                            <option key={b.id} value={b.id}>{b.bankName} - Saldo: ${b.balance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</option>
+                            <option key={b.id} value={b.id} className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">{b.bankName} - Saldo: ${b.balance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</option>
                           ))}
                         </select>
                         <span className="text-[10px] text-slate-400 mt-1 block">Si seleccionas una cuenta, el importe se deducirá automáticamente de tu saldo bancario en tiempo real.</span>
@@ -1351,15 +1351,15 @@ export default function App() {
                         <select
                           value={filterCategory}
                           onChange={e => setFilterCategory(e.target.value)}
-                          className="px-3 py-1.5 rounded-xl border dark:border-slate-800 text-2xs bg-transparent dark:text-white"
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-2xs bg-white text-slate-800 dark:bg-slate-900 dark:text-white"
                         >
-                          <option value="Todos">Todos</option>
-                          <option value="Alimentación">Alimentación</option>
-                          <option value="Transporte">Transporte</option>
-                          <option value="Servicios">Servicios</option>
-                          <option value="Entretenimiento">Entretenimiento</option>
-                          <option value="Salud">Salud</option>
-                          <option value="Otros">Otros</option>
+                          <option value="Todos" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Todos</option>
+                          <option value="Alimentación" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Alimentación</option>
+                          <option value="Transporte" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Transporte</option>
+                          <option value="Servicios" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Servicios</option>
+                          <option value="Entretenimiento" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Entretenimiento</option>
+                          <option value="Salud" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Salud</option>
+                          <option value="Otros" className="bg-white text-slate-800 dark:bg-slate-900 dark:text-white">Otros</option>
                         </select>
                       </div>
                     </div>
